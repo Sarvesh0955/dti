@@ -1,0 +1,128 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Packages
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+pip-wheel-metadata/
+
+# Virtual environments
+env/
+venv/
+ENV/
+.venv/
+env.bak/
+.venv.bak/
+
+# IDEs and editors
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Testing, type checkers and caches
+.pytest_cache/
+.tox/
+.coverage
+coverage.xml
+htmlcov/
+.mypy_cache/
+.dmypy.json
+.pyre/
+.pytype/
+
+# Logs and runtime files
+*.log
+logs/
+*.out
+
+# Environment variables (keep .env.example as template)
+.env
+.env.local
+.env.production
+.env.development
+.env.test
+
+# Data, datasets and large files (commonly keep out of VCS)
+data/
+datasets/
+raw_data/
+processed_data/
+*.csv
+*.parquet
+
+# Models, checkpoints and serialized artifacts
+models/
+saved_models/
+checkpoints/
+*.ckpt
+*.pth
+*.pt
+*.h5
+*.hdf5
+*.pb
+saved_model/
+*.onnx
+*.tflite
+*.tfrecord
+*.joblib
+*.pkl
+*.pickle
+*.sav
+
+# YOLO model files (large)
+yolov8*.pt
+yolo*.pt
+*.weights
+
+# Vosk speech recognition models (very large)
+vosk-model*/
+vosk-model-*
+
+# ML tooling
+mlruns/
+wandb/
+.wandb/
+.tensorboard/
+tfhub_modules/
+.cache/
+.dvc/cache/
+
+# Audio/Video temporary files
+*.wav
+*.mp3
+*.mp4
+*.avi
+temp_audio/
+recordings/
+
+# Camera and image processing temp files
+frames/
+temp_images/
+screenshots/
+
+# Misc
+.DS_Store
+*.sqlite3
+*.db
+*.pem
+*.key
+node_modules/
+
+# OS specific
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Temporary test files
+test_output/
+debug_*
