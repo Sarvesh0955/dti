@@ -11,6 +11,7 @@ import io
 import json
 import traceback
 from collections import Counter, deque
+from datetime import datetime, timedelta
 
 # Load optional .env
 try:
@@ -25,6 +26,21 @@ from PIL import Image
 import cv2
 import platform
 import subprocess
+
+# Modern UI imports
+try:
+    import tkinter as tk
+    from tkinter import ttk
+    import customtkinter as ctk
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+    from matplotlib.animation import FuncAnimation
+    import seaborn as sns
+    UI_AVAILABLE = True
+    print("Modern UI components loaded successfully")
+except ImportError as e:
+    print(f"UI components not available: {e}")
+    UI_AVAILABLE = False
 
 import torch
 # Check for MPS support and select appropriate torch.device
@@ -125,6 +141,9 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 CAM_INDEX = int(os.environ.get("CAM_INDEX", "0"))
 YOLO_MODEL = os.environ.get("YOLO_MODEL", "yolov8x.pt")
 
+# Dashboard configuration
+ENABLE_DASHBOARD = os.environ.get("ENABLE_DASHBOARD", "true").lower() == "true"
+
 # YOLO_MODEL = os.environ.get("YOLO_MODEL", "yolov8n.pt")
 
 try:
@@ -160,6 +179,589 @@ last_detections = []
 
 # FPS calculation
 fps_deque = deque(maxlen=30)
+
+# Dashboard and Analytics
+class AnalyticsTracker:
+    def __init__(self):
+        self.detection_history = deque(maxlen=1000)  # Store last 1000 detections
+        self.fps_history = deque(maxlen=100)
+        self.object_counts = Counter()
+        self.session_start = datetime.now()
+        self.total_detections = 0
+        
+    def log_detection(self, detections, fps):
+        """Log detection events with timestamp"""
+        timestamp = datetime.now()
+        self.fps_history.append(fps)
+        
+        for cls, conf, bbox in detections:
+            detection_data = {
+                'timestamp': timestamp,
+                'class': cls,
+                'confidence': conf,
+                'bbox': bbox
+            }
+            self.detection_history.append(detection_data)
+            self.object_counts[cls] += 1
+            self.total_detections += 1
+    
+    def get_recent_stats(self, minutes=5):
+        """Get statistics for the last N minutes"""
+        cutoff_time = datetime.now() - timedelta(minutes=minutes)
+        recent_detections = [d for d in self.detection_history if d['timestamp'] > cutoff_time]
+        
+        recent_counts = Counter()
+        for detection in recent_detections:
+            recent_counts[detection['class']] += 1
+            
+        return {
+            'total_recent': len(recent_detections),
+            'unique_objects': len(recent_counts),
+            'top_objects': recent_counts.most_common(5),
+            'avg_fps': np.mean(list(self.fps_history)[-30:]) if self.fps_history else 0
+        }
+
+class ModernDashboard:
+    def __init__(self, analytics_tracker):
+        if not UI_AVAILABLE:
+            self.enabled = False
+            return
+            
+        self.enabled = True
+        self.analytics = analytics_tracker
+        self.setup_ui()
+        self.setup_plots()
+        
+    def setup_ui(self):
+        """Initialize the modern dashboard UI"""
+        # Set modern theme
+        ctk.set_appearance_mode("dark")
+        ctk.set_default_color_theme("blue")
+        
+        # Main window
+        self.root = ctk.CTk()
+        self.root.title("AI Vision Assistant - Real-time Dashboard")
+        self.root.geometry("1400x900")
+        
+        # Create main container
+        self.main_container = ctk.CTkFrame(self.root)
+        self.main_container.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Left panel for camera feed
+        self.left_panel = ctk.CTkFrame(self.main_container)
+        self.left_panel.pack(side="left", fill="both", expand=True, padx=(0, 5))
+        
+        # Camera feed label
+        self.camera_label = ctk.CTkLabel(
+            self.left_panel, 
+            text="Camera Feed Loading...",
+            font=ctk.CTkFont(size=16, weight="bold")
+        )
+        self.camera_label.pack(pady=10)
+        
+        # Right panel for dashboard
+        self.right_panel = ctk.CTkFrame(self.main_container)
+        self.right_panel.pack(side="right", fill="y", padx=(5, 0))
+        
+        # Dashboard title
+        title_label = ctk.CTkLabel(
+            self.right_panel,
+            text="📊 Real-time Analytics",
+            font=ctk.CTkFont(size=20, weight="bold")
+        )
+        title_label.pack(pady=(10, 20))
+        
+        # Stats frame
+        self.stats_frame = ctk.CTkFrame(self.right_panel)
+        self.stats_frame.pack(fill="x", padx=10, pady=5)
+        
+        # Create stat labels
+        self.fps_label = ctk.CTkLabel(self.stats_frame, text="FPS: --", font=ctk.CTkFont(size=14))
+        self.fps_label.pack(pady=5)
+        
+        self.detection_label = ctk.CTkLabel(self.stats_frame, text="Detections: --", font=ctk.CTkFont(size=14))
+        self.detection_label.pack(pady=5)
+        
+        self.status_label = ctk.CTkLabel(self.stats_frame, text="Status: Initializing", font=ctk.CTkFont(size=14))
+        self.status_label.pack(pady=5)
+        
+        # Control buttons
+        self.controls_frame = ctk.CTkFrame(self.right_panel)
+        self.controls_frame.pack(fill="x", padx=10, pady=10)
+        
+        self.voice_button = ctk.CTkButton(
+            self.controls_frame,
+            text="🎤 Voice Command",
+            command=self.trigger_voice_command,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            height=40
+        )
+        self.voice_button.pack(pady=5, fill="x")
+        
+        self.summary_button = ctk.CTkButton(
+            self.controls_frame,
+            text="📋 Get Summary",
+            command=self.get_scene_summary,
+            font=ctk.CTkFont(size=14),
+            height=35
+        )
+        self.summary_button.pack(pady=5, fill="x")
+        
+    def setup_plots(self):
+        """Setup matplotlib plots for analytics"""
+        if not self.enabled:
+            return
+            
+        # Create matplotlib frame
+        self.plot_frame = ctk.CTkFrame(self.right_panel)
+        self.plot_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Setup matplotlib with dark theme
+        plt.style.use('dark_background')
+        
+        # Create figure for plots
+        self.fig, (self.ax1, self.ax2) = plt.subplots(2, 1, figsize=(6, 8), facecolor='#2b2b2b')
+        self.fig.patch.set_facecolor('#2b2b2b')
+        
+        # FPS plot
+        self.ax1.set_title('Real-time FPS', color='white', fontsize=12, pad=10)
+        self.ax1.set_ylabel('FPS', color='white')
+        self.ax1.tick_params(colors='white')
+        self.ax1.set_facecolor('#1e1e1e')
+        
+        # Object detection plot
+        self.ax2.set_title('Object Detection Count', color='white', fontsize=12, pad=10)
+        self.ax2.set_ylabel('Count', color='white')
+        self.ax2.tick_params(colors='white')
+        self.ax2.set_facecolor('#1e1e1e')
+        
+        # Embed plots in tkinter
+        self.canvas = FigureCanvasTkAgg(self.fig, self.plot_frame)
+        self.canvas.get_tk_widget().pack(fill="both", expand=True)
+        
+        # Initialize plot data
+        self.fps_data = deque(maxlen=50)
+        self.time_data = deque(maxlen=50)
+        
+    def update_camera_feed(self, frame):
+        """Update camera feed in dashboard"""
+        if not self.enabled:
+            return
+            
+        try:
+            # Convert frame to format suitable for tkinter
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            frame_resized = cv2.resize(frame_rgb, (640, 480))
+            
+            # Convert to PIL image then to PhotoImage
+            pil_image = Image.fromarray(frame_resized)
+            photo = ctk.CTkImage(light_image=pil_image, dark_image=pil_image, size=(640, 480))
+            
+            # Update label
+            self.camera_label.configure(image=photo, text="")
+        except Exception as e:
+            print(f"Error updating camera feed: {e}")
+    
+    def update_stats(self, fps, status, detections):
+        """Update real-time statistics"""
+        if not self.enabled:
+            return
+            
+        try:
+            # Update text labels
+            self.fps_label.configure(text=f"📈 FPS: {fps:.1f}")
+            self.status_label.configure(text=f"🔄 Status: {status}")
+            self.detection_label.configure(text=f"👁️ Objects: {len(detections)}")
+            
+            # Update plots
+            current_time = datetime.now()
+            self.fps_data.append(fps)
+            self.time_data.append(current_time)
+            
+            # Clear and redraw FPS plot
+            self.ax1.clear()
+            self.ax1.set_title('Real-time FPS', color='white', fontsize=12, pad=10)
+            self.ax1.set_ylabel('FPS', color='white')
+            self.ax1.tick_params(colors='white')
+            self.ax1.set_facecolor('#1e1e1e')
+            
+            if len(self.fps_data) > 1:
+                times = [(t - self.time_data[0]).total_seconds() for t in self.time_data]
+                self.ax1.plot(times, list(self.fps_data), color='#00ff41', linewidth=2)
+                self.ax1.fill_between(times, list(self.fps_data), alpha=0.3, color='#00ff41')
+            
+            # Update object detection plot
+            self.ax2.clear()
+            self.ax2.set_title('Top Objects (Last 5 min)', color='white', fontsize=12, pad=10)
+            self.ax2.set_ylabel('Count', color='white')
+            self.ax2.tick_params(colors='white')
+            self.ax2.set_facecolor('#1e1e1e')
+            
+            stats = self.analytics.get_recent_stats(5)
+            if stats['top_objects']:
+                objects, counts = zip(*stats['top_objects'][:5])
+                colors = plt.cm.Set3(np.linspace(0, 1, len(objects)))
+                bars = self.ax2.bar(objects, counts, color=colors)
+                self.ax2.tick_params(axis='x', rotation=45)
+            
+            # Refresh canvas
+            self.canvas.draw()
+            
+        except Exception as e:
+            print(f"Error updating dashboard: {e}")
+    
+    def trigger_voice_command(self):
+        """Trigger voice command from dashboard"""
+        print("Voice command triggered from dashboard")
+        # This will be handled by the existing voice system
+        
+    def get_scene_summary(self):
+        """Get scene summary from dashboard"""
+        print("Scene summary requested from dashboard")
+        # This can trigger the existing summary system
+        
+    def run(self):
+        """Start the dashboard"""
+        if self.enabled:
+            self.root.after(100, self.update_loop)
+            self.root.mainloop()
+    
+    def update_loop(self):
+        """Update loop for dashboard"""
+        if self.enabled and not stop_event.is_set():
+            self.root.after(100, self.update_loop)
+
+# Global analytics and dashboard instances
+analytics_tracker = AnalyticsTracker()
+dashboard = None
+
+# Command history and context
+command_history = deque(maxlen=10)
+last_command_time = 0
+context_memory = {}
+
+# Intelligent Voice Commands System
+VOICE_COMMANDS = {
+    'describe': 'Provide detailed scene description',
+    'count': 'Count specific objects in the scene',
+    'navigate': 'Provide navigation assistance',
+    'read': 'Read text in the image using OCR',
+    'identify': 'Identify specific objects or people',
+    'translate': 'Translate visible text to another language',
+    'reminder': 'Set location-based reminders',
+    'find': 'Find specific objects in the scene',
+    'compare': 'Compare objects or elements in the scene',
+    'analyze': 'Analyze the current situation or environment',
+    'safety': 'Check for safety concerns in the area',
+    'accessibility': 'Provide accessibility information',
+    'weather': 'Describe weather conditions if visible',
+    'time': 'Tell the current time',
+    'help': 'List available commands',
+    'status': 'Report system status and statistics'
+}
+
+def process_advanced_command(command_text, frame):
+    """Process advanced voice commands with intelligent parsing and context awareness"""
+    global last_command_time, command_history, context_memory
+    
+    command_lower = command_text.lower().strip()
+    current_time = time.time()
+    
+    # Add to command history
+    command_entry = {
+        'command': command_text,
+        'timestamp': current_time,
+        'context': get_scene_context(frame)
+    }
+    command_history.append(command_entry)
+    
+    # Handle contextual follow-up commands
+    if any(word in command_lower for word in ['again', 'repeat', 'same']):
+        if command_history and len(command_history) > 1:
+            last_cmd = command_history[-2]['command']  # Get the command before current
+            return f"Repeating: {process_advanced_command(last_cmd, frame)}"
+        else:
+            return "I don't have a previous command to repeat."
+    
+    # Handle relative references
+    if any(word in command_lower for word in ['that', 'it', 'this']):
+        if context_memory.get('last_object'):
+            command_lower = command_lower.replace('that', context_memory['last_object'])
+            command_lower = command_lower.replace('it', context_memory['last_object'])
+            command_lower = command_lower.replace('this', context_memory['last_object'])
+    
+    # Enhanced command routing with fuzzy matching
+    command_result = None
+    
+    if any(word in command_lower for word in ['count', 'how many', 'number of']):
+        command_result = process_count_command(command_lower, frame)
+    elif any(word in command_lower for word in ['read', 'text', 'sign', 'writing']):
+        command_result = process_read_command(command_lower, frame)
+    elif any(word in command_lower for word in ['navigate', 'direction', 'way', 'path', 'go', 'route']):
+        command_result = process_navigation_command(command_lower, frame)
+    elif any(word in command_lower for word in ['find', 'locate', 'where is', 'where are', 'search']):
+        command_result = process_find_command(command_lower, frame)
+    elif any(word in command_lower for word in ['safety', 'danger', 'hazard', 'safe', 'risk']):
+        command_result = process_safety_command(command_lower, frame)
+    elif any(word in command_lower for word in ['accessibility', 'accessible', 'wheelchair', 'disability']):
+        command_result = process_accessibility_command(command_lower, frame)
+    elif any(word in command_lower for word in ['compare', 'difference', 'similar', 'contrast']):
+        command_result = process_compare_command(command_lower, frame)
+    elif any(word in command_lower for word in ['analyze', 'analysis', 'situation', 'scene']):
+        command_result = process_analyze_command(command_lower, frame)
+    elif any(word in command_lower for word in ['help', 'commands', 'what can you do', 'assistance']):
+        command_result = process_help_command()
+    elif any(word in command_lower for word in ['status', 'statistics', 'stats', 'report']):
+        command_result = process_status_command()
+    elif any(word in command_lower for word in ['time', 'clock', 'what time']):
+        command_result = process_time_command()
+    elif any(word in command_lower for word in ['weather', 'temperature', 'sunny', 'rainy', 'cloudy']):
+        command_result = process_weather_command(command_lower, frame)
+    elif any(word in command_lower for word in ['color', 'colors', 'what color']):
+        command_result = process_color_command(command_lower, frame)
+    elif any(word in command_lower for word in ['size', 'big', 'small', 'large', 'tiny']):
+        command_result = process_size_command(command_lower, frame)
+    else:
+        # Default to general description with context
+        command_result = process_general_query(command_text, frame)
+    
+    # Update context memory based on the command and result
+    update_context_memory(command_text, command_result, frame)
+    last_command_time = current_time
+    
+    return command_result
+
+def get_scene_context(frame):
+    """Extract basic context from the current scene"""
+    try:
+        detections = detect_objects(frame)
+        return {
+            'object_count': len(detections),
+            'objects': [cls for cls, conf, bbox in detections],
+            'timestamp': datetime.now()
+        }
+    except:
+        return {'object_count': 0, 'objects': [], 'timestamp': datetime.now()}
+
+def update_context_memory(command, result, frame):
+    """Update context memory for future reference"""
+    global context_memory
+    
+    # Extract mentioned objects from command
+    detections = detect_objects(frame)
+    if detections:
+        context_memory['last_object'] = detections[0][0]  # Most confident detection
+        context_memory['last_objects'] = [cls for cls, conf, bbox in detections]
+    
+    # Store recent command context
+    context_memory['last_command'] = command
+    context_memory['last_result'] = result
+    context_memory['last_update'] = time.time()
+
+def process_weather_command(command, frame):
+    """Handle weather-related commands"""
+    weather_query = """Based on what you can see in this image, describe any weather conditions. 
+    Look for: lighting conditions (bright/dark), shadows, wet surfaces, people's clothing, 
+    outdoor/indoor setting, and any weather indicators visible."""
+    
+    return call_groq_llm(weather_query, frame) or "I cannot determine weather conditions from the current view."
+
+def process_color_command(command, frame):
+    """Handle color-related commands"""
+    color_query = "Describe the main colors you can see in this image. What are the dominant colors and where do you see them?"
+    return call_groq_llm(color_query, frame) or "I cannot analyze colors at the moment."
+
+def process_size_command(command, frame):
+    """Handle size and dimension-related commands"""
+    size_query = "Describe the relative sizes of objects in this image. What looks large, small, or medium-sized? Compare the sizes of different elements."
+    return call_groq_llm(size_query, frame) or "I cannot analyze sizes at the moment."
+
+def process_count_command(command, frame):
+    """Handle counting commands"""
+    # Extract object to count from command
+    count_patterns = ['count', 'how many', 'number of']
+    object_to_count = command
+    
+    for pattern in count_patterns:
+        if pattern in command:
+            object_to_count = command.split(pattern)[-1].strip()
+            break
+    
+    # Get current detections
+    detections = detect_objects(frame)
+    
+    if not object_to_count or object_to_count in ['things', 'objects', 'items']:
+        total_count = len(detections)
+        object_counts = {}
+        for cls, conf, bbox in detections:
+            object_counts[cls] = object_counts.get(cls, 0) + 1
+        
+        if total_count == 0:
+            return "I don't see any objects to count."
+        
+        count_summary = f"I can see {total_count} objects in total: "
+        count_details = [f"{count} {obj}" for obj, count in object_counts.items()]
+        return count_summary + ", ".join(count_details) + "."
+    else:
+        # Count specific object
+        specific_count = 0
+        for cls, conf, bbox in detections:
+            if object_to_count.lower() in cls.lower():
+                specific_count += 1
+        
+        if specific_count == 0:
+            return f"I don't see any {object_to_count} in the current view."
+        else:
+            return f"I can see {specific_count} {object_to_count}{'s' if specific_count != 1 else ''} in the scene."
+
+def process_read_command(command, frame):
+    """Handle text reading commands using OCR simulation"""
+    # This is a placeholder for OCR functionality
+    # In a real implementation, you would use libraries like EasyOCR or Tesseract
+    try:
+        # Simulate OCR detection
+        mock_text_areas = [
+            "EXIT", "STOP", "WELCOME", "OPEN", "CLOSED", 
+            "PARKING", "ENTRANCE", "RESTROOM", "INFORMATION"
+        ]
+        
+        # Use LLM to identify if there's text in the image
+        ocr_query = "Are there any signs, text, or written words visible in this image? If so, what do they say?"
+        return call_groq_llm(ocr_query, frame) or "I cannot detect any readable text in the current view."
+        
+    except Exception as e:
+        return "I'm having trouble reading text in the image right now."
+
+def process_navigation_command(command, frame):
+    """Handle navigation assistance commands"""
+    nav_query = """Please provide navigation assistance based on what you can see in this image. 
+    Look for: doorways, pathways, obstacles, stairs, ramps, signs, or any navigation-relevant features. 
+    Describe the safest path forward and any obstacles to avoid."""
+    
+    return call_groq_llm(nav_query, frame) or "I cannot provide navigation assistance at the moment."
+
+def process_find_command(command, frame):
+    """Handle object finding commands"""
+    # Extract what to find from the command
+    find_patterns = ['find', 'locate', 'where is', 'where are']
+    target_object = command
+    
+    for pattern in find_patterns:
+        if pattern in command:
+            target_object = command.split(pattern)[-1].strip()
+            break
+    
+    find_query = f"Can you see {target_object} in this image? If so, describe where it is located and provide directions to reach it."
+    return call_groq_llm(find_query, frame) or f"I cannot locate {target_object} in the current view."
+
+def process_safety_command(command, frame):
+    """Handle safety assessment commands"""
+    safety_query = """Please analyze this image for any potential safety concerns or hazards. 
+    Look for: wet floors, obstacles, sharp objects, unstable surfaces, poor lighting, 
+    crowded areas, or any other safety risks. Provide safety recommendations."""
+    
+    return call_groq_llm(safety_query, frame) or "I cannot assess safety conditions at the moment."
+
+def process_accessibility_command(command, frame):
+    """Handle accessibility information commands"""
+    accessibility_query = """Please analyze this image for accessibility features and barriers. 
+    Look for: ramps, elevators, wide doorways, accessible parking, braille signs, 
+    handrails, level surfaces, and any barriers that might affect accessibility."""
+    
+    return call_groq_llm(accessibility_query, frame) or "I cannot provide accessibility information at the moment."
+
+def process_compare_command(command, frame):
+    """Handle comparison commands"""
+    compare_query = "Please compare and contrast the different objects, colors, sizes, or elements you can see in this image."
+    return call_groq_llm(compare_query, frame) or "I cannot make comparisons at the moment."
+
+def process_analyze_command(command, frame):
+    """Handle analysis commands"""
+    analyze_query = """Please provide a detailed analysis of this scene. Consider:
+    - The type of environment (indoor/outdoor, public/private)
+    - Activities happening
+    - Time of day indicators
+    - Overall atmosphere and context
+    - Any notable patterns or interesting details"""
+    
+    return call_groq_llm(analyze_query, frame) or "I cannot analyze the scene at the moment."
+
+def process_help_command():
+    """Provide dynamic help information based on context and usage"""
+    global command_history
+    
+    # Basic help text
+    help_text = "I'm your AI Vision Assistant! Here are my capabilities:\n\n"
+    
+    # Core commands
+    help_text += "🔍 SCENE ANALYSIS:\n"
+    help_text += "• 'Describe' or 'What do you see?' - General scene description\n"
+    help_text += "• 'Analyze' - Detailed scene analysis\n"
+    help_text += "• 'Count [objects]' - Count specific items\n\n"
+    
+    help_text += "📖 TEXT & READING:\n"
+    help_text += "• 'Read' - Read visible text or signs\n"
+    help_text += "• 'Find [text]' - Look for specific text\n\n"
+    
+    help_text += "🧭 NAVIGATION & LOCATION:\n"
+    help_text += "• 'Navigate' - Get movement guidance\n"
+    help_text += "• 'Find [object]' - Locate specific items\n"
+    help_text += "• 'Where is [object]?' - Get directions to objects\n\n"
+    
+    help_text += "🛡️ SAFETY & ACCESSIBILITY:\n"
+    help_text += "• 'Safety' - Check for hazards\n"
+    help_text += "• 'Accessibility' - Accessibility information\n\n"
+    
+    help_text += "🎨 DETAILED ANALYSIS:\n"
+    help_text += "• 'Colors' - Describe colors in the scene\n"
+    help_text += "• 'Size' - Compare object sizes\n"
+    help_text += "• 'Compare' - Compare different elements\n"
+    help_text += "• 'Weather' - Describe weather conditions\n\n"
+    
+    help_text += "⚙️ SYSTEM INFO:\n"
+    help_text += "• 'Status' - System statistics\n"
+    help_text += "• 'Time' - Current time\n\n"
+    
+    # Add usage statistics if available
+    if command_history:
+        recent_commands = [cmd['command'] for cmd in list(command_history)[-5:]]
+        help_text += f"📊 Your recent commands: {', '.join(recent_commands)}\n\n"
+    
+    help_text += "💡 TIPS:\n"
+    help_text += "• Say 'Helper' first, then your command\n"
+    help_text += "• Use 'again' to repeat the last command\n"
+    help_text += "• Be specific for better results!\n"
+    help_text += "• Try 'Helper describe' for a general overview"
+    
+    return help_text
+
+def process_status_command():
+    """Provide system status and statistics"""
+    stats = analytics_tracker.get_recent_stats(5)
+    current_time = datetime.now().strftime("%I:%M %p")
+    
+    status_text = f"System Status Report at {current_time}:\n"
+    status_text += f"• Average FPS: {stats['avg_fps']:.1f}\n"
+    status_text += f"• Objects detected in last 5 minutes: {stats['total_recent']}\n"
+    status_text += f"• Unique object types: {stats['unique_objects']}\n"
+    status_text += f"• Session uptime: {datetime.now() - analytics_tracker.session_start}\n"
+    
+    if stats['top_objects']:
+        status_text += "• Most frequent objects: "
+        top_3 = stats['top_objects'][:3]
+        status_text += ", ".join([f"{obj} ({count})" for obj, count in top_3])
+    
+    return status_text
+
+def process_time_command():
+    """Provide current time"""
+    current_time = datetime.now()
+    time_str = current_time.strftime("%I:%M %p on %A, %B %d")
+    return f"The current time is {time_str}."
+
+def process_general_query(query, frame):
+    """Process general queries that don't match specific commands"""
+    return call_groq_llm(query, frame)
 
 def _normalize_for_compare(s: str) -> str:
     """Normalize text for comparison: strip, lowercase, collapse spaces."""
@@ -395,17 +997,110 @@ def summarize_detections(detections, top_k=3):
     return f"I see {summary}."
 
 def draw_overlay(frame, detections, fps, status):
-    """Draw boxes, labels, FPS and status on frame (in-place)."""
+    """Draw enhanced modern overlay with gradients, animations, and better styling."""
+    h, w = frame.shape[:2]
+    
+    # Create modern gradient background for status bar
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (0, 0), (w, 100), (0, 0, 0), -1)
+    cv2.addWeighted(frame, 0.7, overlay, 0.3, 0, frame)
+    
+    # Modern font styling
+    font = cv2.FONT_HERSHEY_DUPLEX
+    
+    # Animated status indicator based on status
+    if status == "Idle":
+        color = (0, 255, 0)  # Green
+        icon = "●"
+    elif status == "Listening/Answering":
+        color = (0, 165, 255)  # Orange
+        icon = "🎤"
+    elif status == "Answering...":
+        color = (255, 0, 255)  # Magenta
+        icon = "🧠"
+    else:
+        color = (255, 255, 255)  # White
+        icon = "○"
+    
+    # Status indicator circle
+    cv2.circle(frame, (30, 30), 12, color, -1)
+    cv2.circle(frame, (30, 30), 12, (255, 255, 255), 2)
+    
+    # Modern status text with shadow effect
+    status_text = f"FPS: {fps:.1f}"
+    cv2.putText(frame, status_text, (62, 25), font, 0.7, (0, 0, 0), 3)  # Shadow
+    cv2.putText(frame, status_text, (60, 23), font, 0.7, (255, 255, 255), 2)  # Main text
+    
+    status_text2 = f"Status: {status}"
+    cv2.putText(frame, status_text2, (62, 55), font, 0.7, (0, 0, 0), 3)  # Shadow
+    cv2.putText(frame, status_text2, (60, 53), font, 0.7, color, 2)  # Main text
+    
+    # Object count
+    obj_count_text = f"Objects: {len(detections)}"
+    cv2.putText(frame, obj_count_text, (62, 85), font, 0.6, (0, 0, 0), 3)  # Shadow
+    cv2.putText(frame, obj_count_text, (60, 83), font, 0.6, (255, 255, 255), 2)  # Main text
+    
+    # Enhanced bounding boxes with confidence bars and modern styling
     for cls, conf, (x1, y1, x2, y2) in detections:
-        # Box
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 200, 0), 2)
+        # Dynamic color based on confidence
+        conf_normalized = min(max(conf, 0.0), 1.0)
+        
+        # Color gradient from red (low confidence) to green (high confidence)
+        red = int(255 * (1 - conf_normalized))
+        green = int(255 * conf_normalized)
+        blue = 50
+        box_color = (blue, green, red)
+        
+        # Main detection box with rounded corners effect
+        thickness = 3
+        cv2.rectangle(frame, (x1, y1), (x2, y2), box_color, thickness)
+        
+        # Corner markers for modern look
+        corner_length = 20
+        corner_thickness = 4
+        # Top-left corner
+        cv2.line(frame, (x1, y1), (x1 + corner_length, y1), box_color, corner_thickness)
+        cv2.line(frame, (x1, y1), (x1, y1 + corner_length), box_color, corner_thickness)
+        # Top-right corner
+        cv2.line(frame, (x2, y1), (x2 - corner_length, y1), box_color, corner_thickness)
+        cv2.line(frame, (x2, y1), (x2, y1 + corner_length), box_color, corner_thickness)
+        # Bottom-left corner
+        cv2.line(frame, (x1, y2), (x1 + corner_length, y2), box_color, corner_thickness)
+        cv2.line(frame, (x1, y2), (x1, y2 - corner_length), box_color, corner_thickness)
+        # Bottom-right corner
+        cv2.line(frame, (x2, y2), (x2 - corner_length, y2), box_color, corner_thickness)
+        cv2.line(frame, (x2, y2), (x2, y2 - corner_length), box_color, corner_thickness)
+        
+        # Confidence bar above the label
+        bar_width = x2 - x1
+        bar_height = 8
+        confidence_width = int(bar_width * conf_normalized)
+        
+        # Background bar
+        cv2.rectangle(frame, (x1, y1 - 35), (x2, y1 - 27), (50, 50, 50), -1)
+        # Confidence fill
+        cv2.rectangle(frame, (x1, y1 - 35), (x1 + confidence_width, y1 - 27), box_color, -1)
+        
+        # Modern label with background
         label = f"{cls} {conf:.2f}"
-        (w, h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-        cv2.rectangle(frame, (x1, y1 - 20), (x1 + w + 6, y1), (0, 200, 0), -1)
-        cv2.putText(frame, label, (x1 + 3, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
-    # FPS and status
-    cv2.putText(frame, f"FPS: {fps:.1f}", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
-    cv2.putText(frame, f"Status: {status}", (10, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+        (label_w, label_h), baseline = cv2.getTextSize(label, font, 0.6, 2)
+        
+        # Label background with padding
+        label_bg_x1 = x1
+        label_bg_y1 = y1 - 25
+        label_bg_x2 = x1 + label_w + 16
+        label_bg_y2 = y1 - 2
+        
+        # Gradient background for label
+        label_overlay = frame[label_bg_y1:label_bg_y2, label_bg_x1:label_bg_x2].copy()
+        cv2.rectangle(frame, (label_bg_x1, label_bg_y1), (label_bg_x2, label_bg_y2), (0, 0, 0), -1)
+        
+        # Label text with shadow
+        cv2.putText(frame, label, (x1 + 9, y1 - 8), font, 0.6, (0, 0, 0), 3)  # Shadow
+        cv2.putText(frame, label, (x1 + 8, y1 - 9), font, 0.6, (255, 255, 255), 2)  # Main text
+    
+    # Add subtle frame border
+    cv2.rectangle(frame, (0, 0), (w-1, h-1), (100, 100, 100), 2)
 
 def call_groq_llm(user_query: str, frame_bgr: np.ndarray, max_retries=2, timeout=30):
     """Call Groq's OpenAI-compatible Chat Completions API with data URI image and user query."""
@@ -561,7 +1256,7 @@ def hotword_listener_thread():
                     else:
                         with status_lock:
                             status_text = "Listening..."
-                        speak("Listening for your question.")
+                        speak("Listening for your command.")
                         # Synchronously listen for a longer query
                         query = listen_for_seconds(FOLLOWUP_PHRASE_LIMIT, phrase_time_limit=FOLLOWUP_PHRASE_LIMIT)
 
@@ -569,8 +1264,8 @@ def hotword_listener_thread():
                         # try one more short listen
                         query = listen_for_seconds(3, phrase_time_limit=3)
                         if not query:
-                            speak("I didn't catch that.")
-                        continue
+                            speak("I didn't catch that. Try saying 'Helper help' for available commands.")
+                            continue
 
                     # Capture latest frame
                     with latest_frame_lock:
@@ -579,17 +1274,23 @@ def hotword_listener_thread():
                         speak("No camera frame available.")
                         continue
 
-                    # Do the LLM call inline (synchronously) and wait for the result.
+                    # Process the command using intelligent command system
+                    with status_lock:
+                        status_text = "Processing..."
+                    
+                    print(f"Processing intelligent command: {query}")
+                    
+                    # Use the new intelligent command processing
+                    answer = process_advanced_command(query, frame_copy)
+                    
                     with status_lock:
                         status_text = "Answering..."
-                    speak("Answering.")
-                    print("Sending Q&A to Groq (inline):", query)
-                    answer = call_groq_llm(query, frame_copy)
+                    
                     if answer:
-                        print("LLM Answer (inline):", answer)
+                        print("Command Response:", answer)
                         speak(answer)
                     else:
-                        speak("I couldn't retrieve an answer.")
+                        speak("I couldn't process that command. Try saying 'Helper help' for available commands.")
                 except Exception as e:
                     print("Hotword processing error:", e, traceback.format_exc())
                     speak("An error occurred while answering.")
@@ -634,10 +1335,10 @@ def post_summary_listen_worker():
             print("post_summary_listen_worker: hotword not detected; ignoring audio.")
             return
 
-        speak("Listening for your question.")
+        speak("Listening for your command.")
         query = listen_for_seconds(FOLLOWUP_PHRASE_LIMIT, phrase_time_limit=FOLLOWUP_PHRASE_LIMIT)
         if not query:
-            speak("I didn't catch that.")
+            speak("I didn't catch that. Try saying 'Helper help' for available commands.")
             return
 
         with latest_frame_lock:
@@ -646,17 +1347,21 @@ def post_summary_listen_worker():
             speak("No camera frame available.")
             return
 
-        # Synchronously perform the LLM call and speak result
+        # Process using intelligent command system
+        with status_lock:
+            status_text = "Processing..."
+        
+        print("post_summary_listen_worker: processing intelligent command:", query)
+        answer = process_advanced_command(query, frame_copy)
+        
         with status_lock:
             status_text = "Answering..."
-        speak("Answering.")
-        print("post_summary_listen_worker: sending query inline:", query)
-        answer = call_groq_llm(query, frame_copy)
+        
         if answer:
-            print("post_summary_listen_worker LLM answer:", answer)
+            print("post_summary_listen_worker command response:", answer)
             speak(answer)
         else:
-            speak("I couldn't retrieve an answer.")
+            speak("I couldn't process that command. Try saying 'Helper help' for available commands.")
     except Exception as e:
         print("post_summary_listen_worker listen error:", e, traceback.format_exc())
     finally:
@@ -666,7 +1371,23 @@ def post_summary_listen_worker():
 
 
 def main():
-    global latest_frame, status_text
+    global latest_frame, status_text, dashboard
+    
+    # Initialize dashboard if enabled
+    dashboard = None
+    if ENABLE_DASHBOARD:
+        dashboard = ModernDashboard(analytics_tracker)
+        
+        # Start dashboard in separate thread if UI is available
+        if dashboard.enabled:
+            dashboard_thread = threading.Thread(target=dashboard.run, daemon=True)
+            dashboard_thread.start()
+            print("Modern dashboard started with real-time analytics")
+        else:
+            print("Dashboard requested but UI components not available")
+    else:
+        print("Dashboard disabled (set ENABLE_DASHBOARD=true to enable)")
+    
     cap = cv2.VideoCapture(CAM_INDEX)
     # drop frames to keep low latency
     try:
@@ -685,7 +1406,7 @@ def main():
     summary_interval = 2.0  # seconds
     last_summary = None  # track last spoken summary
     last_detections = []
-    window_name = "AssistantCam - Press 'q' to quit"
+    window_name = "AI Vision Assistant - Press 'q' to quit"
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
 
     # NEW: frame_idx declaration before loop
@@ -731,10 +1452,22 @@ def main():
             fps_deque.append(1.0 / max(elapsed, 1e-6))
             fps = float(np.mean(fps_deque)) if fps_deque else 0.0
 
+            # Log analytics data
+            analytics_tracker.log_detection(detections, fps)
+
             # Overlay and display: show "Listening/Answering" status during exclusive mode
             status_label = "Listening/Answering" if block_event.is_set() else st
             draw_overlay(frame, detections, fps, status_label)
             cv2.imshow(window_name, frame)
+            
+            # Update dashboard if available
+            if dashboard and dashboard.enabled:
+                try:
+                    dashboard.update_camera_feed(frame)
+                    dashboard.update_stats(fps, status_label, detections)
+                except Exception as e:
+                    # Dashboard update errors shouldn't crash main loop
+                    pass
 
             # Periodic summary every ~summary_interval (only if not in exclusive mode)
             now = time.time()
