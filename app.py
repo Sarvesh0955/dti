@@ -1556,12 +1556,23 @@ def main():
             )
             
             # Start web interface in separate thread
+            def run_web_interface():
+                # Give the server a moment to initialize
+                time.sleep(1.0)
+                # Now start capturing terminal output
+                web_interface.start_output_capture()
+                
             web_thread = threading.Thread(
                 target=lambda: web_interface.run(host=WEB_HOST, port=WEB_PORT), 
                 daemon=True
             )
             web_thread.start()
-            print(f"Web interface started on http://{WEB_HOST}:{WEB_PORT}")
+            
+            # Start output capture in separate thread after server starts
+            capture_thread = threading.Thread(target=run_web_interface, daemon=True)
+            capture_thread.start()
+            
+            print(f"📺 Web dashboard: http://{WEB_HOST}:{WEB_PORT}")
         except ImportError as e:
             print(f"Web interface dependencies not available: {e}")
             web_interface = None
@@ -1719,6 +1730,14 @@ def main():
         except Exception:
             pass
         cv2.destroyAllWindows()
+        
+        # Restore stdout/stderr if web interface was capturing
+        if web_interface:
+            try:
+                web_interface.stop_output_capture()
+            except Exception:
+                pass
+        
         print("Waiting for background threads to finish...")
         # Wait for QA and hotword threads a short while
         qa_thread.join(timeout=1.0)

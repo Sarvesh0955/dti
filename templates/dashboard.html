@@ -167,6 +167,105 @@
             display: none;
         }
 
+        /* Terminal Output Styles */
+        .terminal-container {
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 15px;
+            padding: 15px;
+            margin-top: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            max-height: 400px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .terminal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .terminal-title {
+            font-size: 1.1em;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .terminal-controls {
+            display: flex;
+            gap: 10px;
+        }
+
+        .terminal-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 5px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.3s;
+        }
+
+        .terminal-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            border-color: rgba(255, 255, 255, 0.5);
+        }
+
+        .terminal-output {
+            background: #000;
+            color: #00ff41;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+            padding: 10px;
+            border-radius: 8px;
+            height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            line-height: 1.4;
+        }
+
+        .terminal-output::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .terminal-output::-webkit-scrollbar-track {
+            background: #1a1a1a;
+        }
+
+        .terminal-output::-webkit-scrollbar-thumb {
+            background: #00ff41;
+            border-radius: 4px;
+        }
+
+        .terminal-line {
+            margin: 2px 0;
+            opacity: 0;
+            animation: fadeIn 0.3s forwards;
+        }
+
+        @keyframes fadeIn {
+            to { opacity: 1; }
+        }
+
+        .terminal-line.error {
+            color: #ff4444;
+        }
+
+        .terminal-line.warning {
+            color: #ffaa00;
+        }
+
+        .terminal-line.info {
+            color: #00aaff;
+        }
 
     </style>
 </head>
@@ -204,14 +303,45 @@
                 </div>
                 
             </div>
+
+            <!-- Terminal Output Section -->
+            <div class="terminal-container">
+                <div class="terminal-header">
+                    <div class="terminal-title">
+                        💻 Terminal Output
+                        <span style="font-size: 0.7em; color: #888;">(Live)</span>
+                    </div>
+                    <div class="terminal-controls">
+                        <button class="terminal-btn" id="toggle-scroll-btn" onclick="toggleAutoScroll()">
+                            🔒 Auto-scroll: ON
+                        </button>
+                        <button class="terminal-btn" onclick="clearTerminal()">
+                            🗑️ Clear
+                        </button>
+                    </div>
+                </div>
+                <div class="terminal-output scrollbar" id="terminal-output">
+                    <div class="terminal-line">Waiting for terminal output...</div>
+                </div>
+            </div>
         </div>
     </div>
 
     <script>
-        // Socket.IO connection
-        const socket = io();
+        // Socket.IO connection with increased timeout
+        const socket = io({
+            transports: ['websocket', 'polling'],
+            timeout: 60000,
+            reconnection: true,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000,
+            reconnectionAttempts: Infinity
+        });
         let sessionStartTime = Date.now();
         let commandCount = 0;
+        let autoScroll = true;
+        let terminalLineCount = 0;
+        const MAX_TERMINAL_LINES = 500;
 
         // Connection status
         socket.on('connect', function() {
@@ -229,10 +359,114 @@
         socket.on('connect_error', function(error) {
             console.error('Connection error:', error);
             document.getElementById('connection-indicator').classList.remove('hidden');
-            updateStatus('Connection Error');
+            updateStatus('Connection Error - Retrying...');
         });
 
+        socket.on('reconnect_attempt', function(attemptNumber) {
+            console.log('Reconnection attempt:', attemptNumber);
+            updateStatus('Reconnecting...');
+        });
 
+        socket.on('reconnect', function() {
+            console.log('Reconnected successfully');
+            updateStatus('Reconnected');
+            document.getElementById('connection-indicator').classList.add('hidden');
+        });
+
+        // Terminal output handlers
+        socket.on('terminal_output', function(data) {
+            console.log('Received terminal output:', data.line);
+            addTerminalLine(data.line);
+        });
+
+        socket.on('terminal_history', function(data) {
+            console.log('Received terminal history:', data.lines.length, 'lines');
+            const terminalOutput = document.getElementById('terminal-output');
+            terminalOutput.innerHTML = ''; // Clear "waiting" message
+            terminalLineCount = 0;
+            
+            data.lines.forEach(line => {
+                addTerminalLine(line, false); // Don't auto-scroll for history
+            });
+            
+            // Scroll to bottom after loading history
+            if (autoScroll) {
+                terminalOutput.scrollTop = terminalOutput.scrollHeight;
+            }
+        });
+
+        socket.on('terminal_cleared', function() {
+            console.log('Terminal cleared event received');
+            document.getElementById('terminal-output').innerHTML = 
+                '<div class="terminal-line">Terminal cleared.</div>';
+            terminalLineCount = 1;
+        });
+
+        function addTerminalLine(line, shouldScroll = true) {
+            console.log('Adding terminal line:', line);
+            const terminalOutput = document.getElementById('terminal-output');
+            
+            if (!terminalOutput) {
+                console.error('Terminal output element not found!');
+                return;
+            }
+            
+            // Remove "waiting" message if present
+            if (terminalLineCount === 0) {
+                terminalOutput.innerHTML = '';
+            }
+            
+            // Create line element
+            const lineDiv = document.createElement('div');
+            lineDiv.className = 'terminal-line';
+            
+            // Add color coding based on content
+            const lowerLine = line.toLowerCase();
+            if (lowerLine.includes('error') || lowerLine.includes('failed')) {
+                lineDiv.classList.add('error');
+            } else if (lowerLine.includes('warning') || lowerLine.includes('warn')) {
+                lineDiv.classList.add('warning');
+            } else if (lowerLine.includes('info') || lowerLine.includes('loading')) {
+                lineDiv.classList.add('info');
+            }
+            
+            lineDiv.textContent = line;
+            terminalOutput.appendChild(lineDiv);
+            terminalLineCount++;
+            
+            // Limit number of lines to prevent memory issues
+            if (terminalLineCount > MAX_TERMINAL_LINES) {
+                terminalOutput.removeChild(terminalOutput.firstChild);
+                terminalLineCount--;
+            }
+            
+            // Auto-scroll to bottom if enabled
+            if (autoScroll && shouldScroll) {
+                terminalOutput.scrollTop = terminalOutput.scrollHeight;
+            }
+        }
+
+        function toggleAutoScroll() {
+            autoScroll = !autoScroll;
+            const btn = document.getElementById('toggle-scroll-btn');
+            btn.textContent = autoScroll ? '🔒 Auto-scroll: ON' : '🔓 Auto-scroll: OFF';
+            btn.style.background = autoScroll ? 'rgba(0, 255, 65, 0.2)' : 'rgba(255, 255, 255, 0.1)';
+        }
+
+        function clearTerminal() {
+            socket.emit('clear_terminal');
+        }
+
+        // Page initialization
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Dashboard loaded - terminal output ready');
+            const terminalOutput = document.getElementById('terminal-output');
+            if (terminalOutput) {
+                console.log('Terminal output element found');
+            } else {
+                console.error('Terminal output element NOT found!');
+            }
+        });
 
         // Update camera feed stats
         socket.on('camera_stats', function(data) {

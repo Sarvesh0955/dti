@@ -6,9 +6,80 @@ Provides real-time camera feed and statistics
 import cv2
 import numpy as np
 import time
+import sys
+from io import StringIO
 from flask import Flask, render_template, Response, jsonify, request
 from flask_socketio import SocketIO, emit
-import eventlet
+from collections import deque
+import threading
+
+class TerminalOutputCapture:
+    """Capture terminal output and broadcast to web clients"""
+    def __init__(self, socketio, max_lines=500):
+        self.socketio = socketio
+        self.max_lines = max_lines
+        self.output_buffer = deque(maxlen=max_lines)
+        self.lock = threading.Lock()
+        self.original_stdout = sys.stdout
+        self.original_stderr = sys.stderr
+        
+        # Keywords to filter what gets sent to web interface
+        self.filter_keywords = [
+            'helper',           # Hotword detection
+            'SPEAK',            # TTS output
+            'command',          # Voice commands
+            'question',         # User questions
+            'query',            # User queries
+            'listening',        # Listening state
+            'processing',       # Processing state
+            'answer',           # LLM answers
+            'detected:',        # Object detections
+            'Web client',       # Connection status
+            'ERROR',            # Errors
+            'Failed',           # Failures
+            '✅',               # Status indicators
+            '❌',
+            '🔔',
+            '📤',
+            '📭',
+            '🎤',
+            '🗣️'
+        ]
+        
+    def write(self, text):
+        """Capture output and broadcast"""
+        # Always write to original stdout
+        self.original_stdout.write(text)
+        self.original_stdout.flush()
+        
+        # Only store and broadcast important messages
+        if text.strip():
+            text_lower = text.lower()
+            
+            # Check if this line contains important keywords
+            should_broadcast = any(keyword.lower() in text_lower for keyword in self.filter_keywords)
+            
+            if should_broadcast:
+                with self.lock:
+                    timestamp = time.strftime('%H:%M:%S')
+                    line = f"[{timestamp}] {text.rstrip()}"
+                    self.output_buffer.append(line)
+                    
+                    # Broadcast to all connected clients
+                    try:
+                        self.socketio.emit('terminal_output', {'line': line}, namespace='/')
+                    except Exception as e:
+                        # Silent fail - may happen before clients connect
+                        pass
+    
+    def flush(self):
+        """Required for file-like object"""
+        self.original_stdout.flush()
+    
+    def get_buffer(self):
+        """Get current buffer contents"""
+        with self.lock:
+            return list(self.output_buffer)
 
 class WebInterface:
     def __init__(self, analytics_tracker, latest_frame_lock, latest_frame, 
@@ -22,7 +93,18 @@ class WebInterface:
         # Create Flask app
         self.app = Flask(__name__)
         self.app.config['SECRET_KEY'] = 'ai_vision_assistant_secret'
-        self.socketio = SocketIO(self.app, cors_allowed_origins="*", async_mode='eventlet')
+        self.socketio = SocketIO(
+            self.app, 
+            cors_allowed_origins="*", 
+            async_mode='threading',
+            ping_timeout=60,
+            ping_interval=25,
+            logger=False,
+            engineio_logger=False
+        )
+        
+        # Terminal output capture
+        self.terminal_capture = TerminalOutputCapture(self.socketio)
         
         # Stats tracking
         self.session_start = time.time()
@@ -31,6 +113,17 @@ class WebInterface:
         
         self.setup_routes()
         self.setup_socketio()
+        
+    def start_output_capture(self):
+        """Start capturing terminal output"""
+        sys.stdout = self.terminal_capture
+        sys.stderr = self.terminal_capture
+        print("✅ Terminal output capture ACTIVE - voice commands will stream to web dashboard")
+    
+    def stop_output_capture(self):
+        """Stop capturing terminal output"""
+        sys.stdout = self.terminal_capture.original_stdout
+        sys.stderr = self.terminal_capture.original_stderr
         
     def setup_routes(self):
         """Setup Flask routes"""
@@ -61,12 +154,25 @@ class WebInterface:
         
         @self.socketio.on('connect')
         def handle_connect():
-            print(f"Web client connected: {request.sid}")
+            print(f"✅ Web client connected: {request.sid}")
             emit('connection_status', {'status': 'connected'})
+            
+            # Send existing terminal output buffer to newly connected client
+            buffer = self.terminal_capture.get_buffer()
+            if buffer:
+                emit('terminal_history', {'lines': buffer})
+            
         
         @self.socketio.on('disconnect')
         def handle_disconnect():
             print(f"Web client disconnected: {request.sid}")
+        
+        @self.socketio.on('clear_terminal')
+        def handle_clear_terminal():
+            """Clear terminal output buffer"""
+            with self.terminal_capture.lock:
+                self.terminal_capture.output_buffer.clear()
+            emit('terminal_cleared', broadcast=True)
     
     def generate_frames(self):
         """Generate camera frames for web streaming"""
@@ -121,12 +227,19 @@ class WebInterface:
     
     def run(self, host='0.0.0.0', port=5000):
         """Run the web interface"""
-        print(f"Starting web interface on http://{host}:{port}")
-        print("Web dashboard features:")
-        print("  📹 Real-time camera feed")
-        print("  📊 Live statistics")
-        
-        self.socketio.run(self.app, host=host, port=port, debug=False)
+        try:
+            # Use threading mode instead of eventlet to avoid conflicts with audio processing
+            self.socketio.run(
+                self.app, 
+                host=host, 
+                port=port, 
+                debug=False, 
+                use_reloader=False,
+                allow_unsafe_werkzeug=True
+            )
+        except Exception as e:
+            print(f"❌ Error running web interface: {e}")
+
 
 # Global web interface instance
 web_interface = None
