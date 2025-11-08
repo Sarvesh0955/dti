@@ -3,434 +3,616 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Vision Assistant Dashboard</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <title>AI Vision Assistant - Web Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
             color: white;
-            min-height: 100vh;
+            overflow-x: hidden;
         }
-        
-        .header {
-            background: rgba(0,0,0,0.3);
-            padding: 1rem;
-            text-align: center;
-            backdrop-filter: blur(10px);
-        }
-        
-        .header h1 {
-            font-size: 2.5rem;
-            margin-bottom: 0.5rem;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
-        }
-        
+
         .container {
             display: grid;
             grid-template-columns: 2fr 1fr;
-            gap: 1rem;
-            padding: 1rem;
-            max-width: 1400px;
-            margin: 0 auto;
+            gap: 20px;
+            padding: 20px;
+            min-height: 100vh;
         }
-        
-        .camera-section {
-            background: rgba(255,255,255,0.1);
-            border-radius: 15px;
-            padding: 1rem;
+
+        .main-panel {
+            background: rgba(255, 255, 255, 0.1);
             backdrop-filter: blur(10px);
-            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 20px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
         }
-        
-        .camera-feed {
-            width: 100%;
-            max-width: 640px;
-            border-radius: 10px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-        }
-        
-        .sidebar {
+
+        .side-panel {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
             display: flex;
             flex-direction: column;
-            gap: 1rem;
+            gap: 20px;
         }
-        
-        .stats-card {
-            background: rgba(255,255,255,0.1);
-            border-radius: 15px;
-            padding: 1rem;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255,255,255,0.2);
-        }
-        
-        .stats-card h3 {
-            margin-bottom: 1rem;
-            color: #ffd700;
-            font-size: 1.2rem;
-        }
-        
-        .stat-item {
+
+        .panel-header {
             display: flex;
-            justify-content: space-between;
-            margin-bottom: 0.5rem;
-            padding: 0.5rem;
-            background: rgba(255,255,255,0.05);
-            border-radius: 8px;
-        }
-        
-        .stat-value {
-            font-weight: bold;
-            color: #00ff41;
-        }
-        
-        .controls {
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-        }
-        
-        .btn {
-            background: linear-gradient(45deg, #ff6b6b, #ee5a52);
-            border: none;
-            padding: 1rem;
-            border-radius: 10px;
-            color: white;
-            font-size: 1rem;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-        
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(0,0,0,0.3);
-        }
-        
-        .btn.voice {
-            background: linear-gradient(45deg, #4ecdc4, #45b7aa);
-        }
-        
-        .btn.summary {
-            background: linear-gradient(45deg, #45b7d1, #2980b9);
-        }
-        
-        .chart-container {
-            height: 200px;
-            margin-top: 1rem;
-        }
-        
-        .object-list {
-            max-height: 200px;
-            overflow-y: auto;
-        }
-        
-        .object-item {
-            background: rgba(255,255,255,0.05);
-            margin: 0.25rem 0;
-            padding: 0.5rem;
-            border-radius: 6px;
-            display: flex;
-            justify-content: space-between;
             align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            font-size: 1.4em;
+            font-weight: bold;
         }
-        
-        .confidence-bar {
-            width: 60px;
-            height: 4px;
-            background: rgba(255,255,255,0.2);
-            border-radius: 2px;
+
+        .camera-container {
+            position: relative;
+            border-radius: 15px;
             overflow: hidden;
+            background: #000;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
         }
-        
-        .confidence-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #ff6b6b, #ffd700, #00ff41);
-            transition: width 0.3s ease;
+
+        #camera-feed {
+            width: 100%;
+            height: auto;
+            display: block;
         }
-        
+
+        .status-overlay {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 15px;
+            border-radius: 10px;
+            backdrop-filter: blur(5px);
+        }
+
         .status-indicator {
-            display: inline-block;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 5px;
+        }
+
+        .status-dot {
             width: 12px;
             height: 12px;
             border-radius: 50%;
-            margin-right: 0.5rem;
+            background: #00ff41;
             animation: pulse 2s infinite;
         }
-        
-        .status-idle { background: #00ff41; }
-        .status-listening { background: #ffd700; }
-        .status-answering { background: #ff6b6b; }
-        
+
         @keyframes pulse {
             0% { opacity: 1; }
             50% { opacity: 0.5; }
             100% { opacity: 1; }
         }
-        
-        .connection-status {
-            position: fixed;
-            top: 1rem;
-            right: 1rem;
-            padding: 0.5rem 1rem;
-            border-radius: 20px;
-            font-size: 0.9rem;
-            font-weight: bold;
+
+        .transcript-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 15px;
+            height: 200px;
+            overflow-y: auto;
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
-        
-        .connected {
-            background: rgba(0, 255, 65, 0.2);
-            border: 1px solid #00ff41;
+
+        .transcript-item {
+            margin-bottom: 10px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            border-left: 4px solid #00ff41;
+        }
+
+        .transcript-time {
+            font-size: 0.8em;
+            color: #ccc;
+            margin-bottom: 3px;
+        }
+
+        .question-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .question-input {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            font-size: 1em;
+            margin-bottom: 10px;
+            backdrop-filter: blur(5px);
+        }
+
+        .question-input::placeholder {
+            color: #ccc;
+        }
+
+        .question-input:focus {
+            outline: none;
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(45deg, #00ff41, #00cc33);
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 1em;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 255, 65, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+        }
+
+        .btn-secondary:hover {
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-danger {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+        }
+
+        .btn-danger:hover {
+            box-shadow: 0 5px 15px rgba(255, 107, 107, 0.4);
+        }
+
+        .commands-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            flex-grow: 1;
+        }
+
+        .command-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .command-btn {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: left;
+            font-size: 0.9em;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .command-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateX(5px);
+        }
+
+        .response-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 15px;
+            height: 150px;
+            overflow-y: auto;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .response-item {
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 8px;
+            background: rgba(0, 255, 65, 0.1);
+            border-left: 4px solid #00ff41;
+        }
+
+        .response-time {
+            font-size: 0.8em;
+            color: #ccc;
+            margin-bottom: 5px;
+        }
+
+        .control-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .stat-value {
+            font-size: 1.8em;
+            font-weight: bold;
             color: #00ff41;
         }
-        
-        .disconnected {
-            background: rgba(255, 107, 107, 0.2);
-            border: 1px solid #ff6b6b;
-            color: #ff6b6b;
+
+        .stat-label {
+            font-size: 0.9em;
+            color: #ccc;
+            margin-top: 5px;
         }
-        
-        @media (max-width: 768px) {
+
+        .scrollbar {
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+        }
+
+        .scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .scrollbar::-webkit-scrollbar-thumb {
+            background-color: rgba(255, 255, 255, 0.3);
+            border-radius: 3px;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        @media (max-width: 1024px) {
             .container {
                 grid-template-columns: 1fr;
-            }
-            
-            .header h1 {
-                font-size: 1.8rem;
+                grid-template-rows: auto auto;
             }
         }
     </style>
 </head>
 <body>
-    <div class="connection-status" id="connectionStatus">Connecting...</div>
-    
-    <div class="header">
-        <h1>🤖 AI Vision Assistant</h1>
-        <p>Real-time Object Detection & Analytics Dashboard</p>
-    </div>
-    
     <div class="container">
-        <div class="camera-section">
-            <h3>📹 Live Camera Feed</h3>
-            <img id="cameraFeed" class="camera-feed" src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjQwIiBoZWlnaHQ9IjQ4MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsbD0iIzMzMzMzMyIvPgo8dGV4dCB4PSI1MCUiIHk9IjUwJSIgZm9udC1mYW1pbHk9IkFyaWFsLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjE4IiBmaWxsPSIjY2NjY2NjIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBkeT0iLjNlbSI+Q2FtZXJhIEZlZWQgTG9hZGluZy4uLjwvdGV4dD4KPHN2Zz4=" alt="Camera Feed">
-        </div>
-        
-        <div class="sidebar">
-            <div class="stats-card">
-                <h3>📊 Real-time Stats</h3>
-                <div class="stat-item">
-                    <span>Status:</span>
-                    <span class="stat-value" id="status">
-                        <span class="status-indicator status-idle"></span>
-                        Initializing
-                    </span>
-                </div>
-                <div class="stat-item">
-                    <span>FPS:</span>
-                    <span class="stat-value" id="fps">--</span>
-                </div>
-                <div class="stat-item">
-                    <span>Objects Detected:</span>
-                    <span class="stat-value" id="objectCount">--</span>
-                </div>
-                <div class="stat-item">
-                    <span>Session Uptime:</span>
-                    <span class="stat-value" id="uptime">--</span>
-                </div>
+        <!-- Main Panel - Camera Feed -->
+        <div class="main-panel">
+            <div class="panel-header">
+                📹 AI Vision Assistant
+                <div class="loading" id="connection-indicator"></div>
             </div>
             
-            <div class="stats-card">
-                <h3>🎯 Detected Objects</h3>
-                <div class="object-list" id="objectList">
-                    <div class="object-item">
-                        <span>No objects detected</span>
+            <div class="camera-container">
+                <img id="camera-feed" src="/video_feed" alt="Camera Feed" />
+                <div class="status-overlay">
+                    <div class="status-indicator">
+                        <div class="status-dot"></div>
+                        <span id="status-text">Initializing...</span>
+                    </div>
+                    <div id="fps-display">FPS: --</div>
+                    <div id="objects-count">Objects: --</div>
+                </div>
+            </div>
+
+            <!-- Stats Grid -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="total-commands">0</div>
+                    <div class="stat-label">Total Commands</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="session-time">00:00</div>
+                    <div class="stat-label">Session Time</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="avg-fps">0.0</div>
+                    <div class="stat-label">Average FPS</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="objects-detected">0</div>
+                    <div class="stat-label">Objects Today</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Side Panel - Controls -->
+        <div class="side-panel">
+            <!-- Voice Transcript -->
+            <section>
+                <div class="panel-header">🎤 Voice Transcript</div>
+                <div class="transcript-section scrollbar" id="transcript-container">
+                    <div class="transcript-item">
+                        <div class="transcript-time">System Ready</div>
+                        <div>AI Vision Assistant is listening for voice commands...</div>
                     </div>
                 </div>
-            </div>
-            
-            <div class="stats-card">
-                <h3>🎮 Controls</h3>
-                <div class="controls">
-                    <button class="btn voice" onclick="triggerVoiceCommand()">
-                        🎤 Voice Command
-                    </button>
-                    <button class="btn summary" onclick="getSceneSummary()">
-                        📋 Get Summary
+            </section>
+
+            <!-- Ask AI Questions -->
+            <section>
+                <div class="panel-header">💬 Ask AI</div>
+                <div class="question-section">
+                    <input type="text" class="question-input" id="question-input" 
+                           placeholder="Type your question about what the camera sees..." />
+                    <button class="btn" id="ask-btn" onclick="askQuestion()">
+                        <span id="ask-btn-text">Ask Question</span>
+                        <div class="loading hidden" id="ask-loading"></div>
                     </button>
                 </div>
-            </div>
-            
-            <div class="stats-card">
-                <h3>📈 FPS Chart</h3>
-                <div class="chart-container">
-                    <canvas id="fpsChart"></canvas>
+                
+                <div class="response-section scrollbar" id="response-container">
+                    <div class="response-item">
+                        <div class="response-time">Ready</div>
+                        <div>Type a question above to get AI analysis of the current camera view.</div>
+                    </div>
                 </div>
-            </div>
+            </section>
+
+            <!-- Voice Commands -->
+            <section class="commands-section">
+                <div class="panel-header">🗣️ Voice Commands</div>
+                <div class="control-buttons">
+                    <button class="btn btn-secondary" onclick="showAllCommands()">Show All Commands</button>
+                    <button class="btn btn-danger" onclick="stopSpeech()">Stop Speech</button>
+                </div>
+                
+                <div class="command-grid" id="commands-grid">
+                    <button class="command-btn" onclick="executeCommand('describe')">📝 Describe Scene</button>
+                    <button class="command-btn" onclick="executeCommand('count people')">👥 Count People</button>
+                    <button class="command-btn" onclick="executeCommand('read')">📖 Read Text</button>
+                    <button class="command-btn" onclick="executeCommand('navigate')">🧭 Navigation Help</button>
+                    <button class="command-btn" onclick="executeCommand('safety')">🛡️ Safety Check</button>
+                    <button class="command-btn" onclick="executeCommand('colors')">🎨 Describe Colors</button>
+                    <button class="command-btn" onclick="executeCommand('time')">⏰ Current Time</button>
+                    <button class="command-btn" onclick="executeCommand('status')">📊 System Status</button>
+                </div>
+            </section>
         </div>
     </div>
 
     <script>
-        // WebSocket connection
+        // Socket.IO connection
         const socket = io();
-        let startTime = Date.now();
-        
-        // FPS Chart setup
-        const ctx = document.getElementById('fpsChart').getContext('2d');
-        const fpsChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: [],
-                datasets: [{
-                    label: 'FPS',
-                    data: [],
-                    borderColor: '#00ff41',
-                    backgroundColor: 'rgba(0, 255, 65, 0.1)',
-                    tension: 0.4,
-                    fill: true
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    x: { display: false },
-                    y: { 
-                        beginAtZero: true,
-                        max: 60,
-                        grid: { color: 'rgba(255,255,255,0.1)' },
-                        ticks: { color: 'white' }
-                    }
-                },
-                plugins: {
-                    legend: { labels: { color: 'white' } }
-                }
-            }
-        });
-        
-        // Socket event handlers
+        let sessionStartTime = Date.now();
+        let commandCount = 0;
+
+        // Connection status
         socket.on('connect', function() {
-            updateConnectionStatus(true);
+            console.log('Connected to server');
+            document.getElementById('connection-indicator').classList.add('hidden');
+            updateStatus('Connected');
         });
-        
+
         socket.on('disconnect', function() {
-            updateConnectionStatus(false);
+            console.log('Disconnected from server');
+            document.getElementById('connection-indicator').classList.remove('hidden');
+            updateStatus('Disconnected');
         });
-        
-        socket.on('stats_update', function(data) {
-            updateStats(data);
+
+        // Update camera feed stats
+        socket.on('camera_stats', function(data) {
+            document.getElementById('fps-display').textContent = `FPS: ${data.fps.toFixed(1)}`;
+            document.getElementById('objects-count').textContent = `Objects: ${data.objects}`;
+            document.getElementById('avg-fps').textContent = data.fps.toFixed(1);
+            document.getElementById('objects-detected').textContent = data.total_objects || 0;
+            updateStatus(data.status);
         });
-        
-        socket.on('frame_update', function(data) {
-            if (data.frame) {
-                document.getElementById('cameraFeed').src = data.frame;
-            }
+
+        // Voice transcript updates
+        socket.on('voice_transcript', function(data) {
+            addTranscriptItem(data.text, data.type || 'user');
         });
-        
-        // Functions
-        function updateConnectionStatus(connected) {
-            const statusEl = document.getElementById('connectionStatus');
-            if (connected) {
-                statusEl.textContent = '🟢 Connected';
-                statusEl.className = 'connection-status connected';
+
+        // AI responses
+        socket.on('ai_response', function(data) {
+            addResponseItem(data.text);
+            addTranscriptItem(data.text, 'assistant');
+        });
+
+        // Command responses
+        socket.on('command_response', function(data) {
+            addResponseItem(data.response);
+        });
+
+        function updateStatus(status) {
+            document.getElementById('status-text').textContent = status;
+            const dot = document.querySelector('.status-dot');
+            
+            if (status === 'Listening...' || status === 'Processing...') {
+                dot.style.background = '#ff6b6b';
+            } else if (status === 'Answering...') {
+                dot.style.background = '#ffd93d';
             } else {
-                statusEl.textContent = '🔴 Disconnected';
-                statusEl.className = 'connection-status disconnected';
+                dot.style.background = '#00ff41';
             }
         }
-        
-        function updateStats(data) {
-            // Update FPS
-            document.getElementById('fps').textContent = data.fps?.toFixed(1) || '--';
+
+        function addTranscriptItem(text, type = 'user') {
+            const container = document.getElementById('transcript-container');
+            const item = document.createElement('div');
+            item.className = 'transcript-item';
             
-            // Update status with indicator
-            const statusEl = document.getElementById('status');
-            const status = data.status || 'Unknown';
-            let statusClass = 'status-idle';
+            const time = new Date().toLocaleTimeString();
+            const icon = type === 'assistant' ? '🤖' : '👤';
             
-            if (status.includes('Listening') || status.includes('Answering')) {
-                statusClass = 'status-listening';
-            } else if (status.includes('Answering')) {
-                statusClass = 'status-answering';
+            item.innerHTML = `
+                <div class="transcript-time">${time} ${icon}</div>
+                <div>${text}</div>
+            `;
+            
+            container.appendChild(item);
+            container.scrollTop = container.scrollHeight;
+            
+            // Keep only last 20 items
+            while (container.children.length > 20) {
+                container.removeChild(container.firstChild);
             }
-            
-            statusEl.innerHTML = `<span class="status-indicator ${statusClass}"></span>${status}`;
-            
-            // Update object count
-            document.getElementById('objectCount').textContent = data.detections || 0;
-            
-            // Update uptime
-            const uptime = Math.floor((Date.now() - startTime) / 1000);
-            const minutes = Math.floor(uptime / 60);
-            const seconds = uptime % 60;
-            document.getElementById('uptime').textContent = `${minutes}m ${seconds}s`;
-            
-            // Update object list
-            updateObjectList(data.object_list || []);
-            
-            // Update FPS chart
-            updateFpsChart(data.fps);
         }
-        
-        function updateObjectList(objects) {
-            const listEl = document.getElementById('objectList');
+
+        function addResponseItem(text) {
+            const container = document.getElementById('response-container');
+            const item = document.createElement('div');
+            item.className = 'response-item';
             
-            if (objects.length === 0) {
-                listEl.innerHTML = '<div class="object-item"><span>No objects detected</span></div>';
-                return;
+            const time = new Date().toLocaleTimeString();
+            
+            item.innerHTML = `
+                <div class="response-time">${time}</div>
+                <div>${text}</div>
+            `;
+            
+            container.appendChild(item);
+            container.scrollTop = container.scrollHeight;
+            
+            // Keep only last 10 responses
+            while (container.children.length > 10) {
+                container.removeChild(container.firstChild);
             }
-            
-            listEl.innerHTML = objects.map(obj => `
-                <div class="object-item">
-                    <span>${obj.class}</span>
-                    <div class="confidence-bar">
-                        <div class="confidence-fill" style="width: ${(obj.confidence * 100)}%"></div>
-                    </div>
-                </div>
-            `).join('');
         }
-        
-        function updateFpsChart(fps) {
-            const now = new Date();
-            const timeLabel = now.toLocaleTimeString();
+
+        function askQuestion() {
+            const input = document.getElementById('question-input');
+            const question = input.value.trim();
             
-            fpsChart.data.labels.push(timeLabel);
-            fpsChart.data.datasets[0].data.push(fps);
+            if (!question) return;
             
-            // Keep only last 20 data points
-            if (fpsChart.data.labels.length > 20) {
-                fpsChart.data.labels.shift();
-                fpsChart.data.datasets[0].data.shift();
+            const btn = document.getElementById('ask-btn');
+            const btnText = document.getElementById('ask-btn-text');
+            const loading = document.getElementById('ask-loading');
+            
+            // Show loading state
+            btnText.classList.add('hidden');
+            loading.classList.remove('hidden');
+            btn.disabled = true;
+            
+            // Add question to transcript
+            addTranscriptItem(question, 'user');
+            commandCount++;
+            document.getElementById('total-commands').textContent = commandCount;
+            
+            // Send question to server
+            socket.emit('ask_question', { question: question });
+            
+            // Clear input
+            input.value = '';
+            
+            // Reset button after 3 seconds
+            setTimeout(() => {
+                btnText.classList.remove('hidden');
+                loading.classList.add('hidden');
+                btn.disabled = false;
+            }, 3000);
+        }
+
+        function executeCommand(command) {
+            addTranscriptItem(`Helper ${command}`, 'user');
+            commandCount++;
+            document.getElementById('total-commands').textContent = commandCount;
+            socket.emit('voice_command', { command: command });
+        }
+
+        function stopSpeech() {
+            socket.emit('stop_speech');
+            addTranscriptItem('Stop command sent', 'system');
+        }
+
+        function showAllCommands() {
+            const commands = [
+                '📝 describe - General scene description',
+                '👥 count [object] - Count specific objects',
+                '📖 read - Read visible text/signs',
+                '🧭 navigate - Navigation assistance',
+                '🔍 find [object] - Locate specific objects',
+                '🛡️ safety - Check for safety concerns',
+                '♿ accessibility - Accessibility information',
+                '🎨 colors - Describe scene colors',
+                '📏 size - Compare object sizes',
+                '🔄 compare - Compare elements',
+                '🔍 analyze - Detailed scene analysis',
+                '🌤️ weather - Weather conditions',
+                '⏰ time - Current time',
+                '📊 status - System statistics',
+                '❓ help - Show help information',
+                '🛑 stop - Stop current operation'
+            ];
+            
+            let commandText = 'Available Voice Commands:\n\n';
+            commandText += 'Say "Helper" followed by:\n\n';
+            commandText += commands.join('\n');
+            
+            addResponseItem(commandText);
+        }
+
+        // Allow Enter key to ask question
+        document.getElementById('question-input').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                askQuestion();
             }
-            
-            fpsChart.update('none');
-        }
-        
-        function triggerVoiceCommand() {
-            socket.emit('voice_command', { command: 'manual_trigger' });
-            console.log('Voice command triggered');
-        }
-        
-        function getSceneSummary() {
-            socket.emit('voice_command', { command: 'get_summary' });
-            console.log('Scene summary requested');
-        }
-        
-        // Request initial stats
-        socket.emit('request_stats');
-        
-        // Periodic stats request
+        });
+
+        // Update session time every second
         setInterval(() => {
-            socket.emit('request_stats');
-        }, 2000);
+            const elapsed = Date.now() - sessionStartTime;
+            const minutes = Math.floor(elapsed / 60000);
+            const seconds = Math.floor((elapsed % 60000) / 1000);
+            document.getElementById('session-time').textContent = 
+                `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }, 1000);
+
+        // Refresh camera feed every 100ms
+        setInterval(() => {
+            const img = document.getElementById('camera-feed');
+            const timestamp = new Date().getTime();
+            img.src = `/video_feed?t=${timestamp}`;
+        }, 100);
     </script>
 </body>
 </html>

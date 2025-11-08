@@ -144,6 +144,11 @@ YOLO_MODEL = os.environ.get("YOLO_MODEL", "yolov8x.pt")
 # Dashboard configuration
 ENABLE_DASHBOARD = os.environ.get("ENABLE_DASHBOARD", "true").lower() == "true"
 
+# Web interface configuration
+ENABLE_WEB_INTERFACE = os.environ.get("ENABLE_WEB_INTERFACE", "true").lower() == "true"
+WEB_HOST = os.environ.get("WEB_HOST", "0.0.0.0")
+WEB_PORT = int(os.environ.get("WEB_PORT", "5001"))
+
 # YOLO_MODEL = os.environ.get("YOLO_MODEL", "yolov8n.pt")
 
 try:
@@ -166,6 +171,11 @@ status_text = "Idle"
 
 # NEW: block_event indicates "exclusive audio+LLM" mode: pause detections and other listeners
 block_event = threading.Event()   # ### NEW
+
+# Stop/Interrupt system
+interrupt_event = threading.Event()  # For interrupting current operations
+tts_process = None  # Track current TTS process for killing
+interrupt_lock = threading.Lock()
 
 # Keep track of last spoken text (normalized) to suppress duplicates
 last_spoken_text = ""
@@ -434,6 +444,7 @@ class ModernDashboard:
 # Global analytics and dashboard instances
 analytics_tracker = AnalyticsTracker()
 dashboard = None
+web_interface = None
 
 # Command history and context
 command_history = deque(maxlen=10)
@@ -521,6 +532,9 @@ def process_advanced_command(command_text, frame):
         command_result = process_color_command(command_lower, frame)
     elif any(word in command_lower for word in ['size', 'big', 'small', 'large', 'tiny']):
         command_result = process_size_command(command_lower, frame)
+    elif any(word in command_lower for word in ['stop', 'halt', 'pause', 'quiet', 'silence']):
+        interrupt_processing()
+        return "Stopping current operation."
     else:
         # Default to general description with context
         command_result = process_general_query(command_text, frame)
@@ -727,7 +741,12 @@ def process_help_command():
         recent_commands = [cmd['command'] for cmd in list(command_history)[-5:]]
         help_text += f"📊 Your recent commands: {', '.join(recent_commands)}\n\n"
     
-    help_text += "💡 TIPS:\n"
+    help_text += "� STOP CONTROLS:\n"
+    help_text += "• Say 'Helper stop' or 'stop' to interrupt speech\n"
+    help_text += "• Press 'S' key or ESC to stop immediately\n"
+    help_text += "• Say 'quiet', 'silence', or 'enough' to pause\n\n"
+    
+    help_text += "�💡 TIPS:\n"
     help_text += "• Say 'Helper' first, then your command\n"
     help_text += "• Use 'again' to repeat the last command\n"
     help_text += "• Be specific for better results!\n"
@@ -771,16 +790,40 @@ def _normalize_for_compare(s: str) -> str:
 
 # Create TTS worker thread
 def tts_worker():
-    global _tts_engine
+    global _tts_engine, tts_process
     while not stop_event.is_set():
         try:
             text = tts_queue.get(timeout=0.2)
         except queue.Empty:
             continue
+        
+        # Check if we should interrupt before speaking
+        if interrupt_event.is_set():
+            continue
+            
         try:
             if platform.system() == 'Darwin':
                 # use macOS 'say' with chosen voice and rate
-                subprocess.run(['say', '-v', TTS_VOICE, '-r', str(TTS_RATE), text])
+                with interrupt_lock:
+                    if not interrupt_event.is_set():
+                        tts_process = subprocess.Popen(['say', '-v', TTS_VOICE, '-r', str(TTS_RATE), text])
+                        
+                # Wait for process completion or interruption
+                while tts_process and tts_process.poll() is None:
+                    if interrupt_event.is_set():
+                        try:
+                            tts_process.terminate()
+                            tts_process.wait(timeout=1)
+                        except:
+                            try:
+                                tts_process.kill()
+                            except:
+                                pass
+                        tts_process = None
+                        break
+                    time.sleep(0.1)
+                tts_process = None
+                    
             elif _tts_engine:
                 # configure pyttsx3 voice and rate
                 try:
@@ -790,13 +833,26 @@ def tts_worker():
                     _tts_engine.setProperty('rate', TTS_RATE)
                 except Exception:
                     pass
-                _tts_engine.say(text)
-                _tts_engine.runAndWait()
+                
+                if not interrupt_event.is_set():
+                    _tts_engine.say(text)
+                    # Check for interruption during speech
+                    start_time = time.time()
+                    _tts_engine.startLoop(False)
+                    while _tts_engine.isBusy():
+                        if interrupt_event.is_set():
+                            _tts_engine.stop()
+                            break
+                        _tts_engine.iterate()
+                        time.sleep(0.1)
+                    _tts_engine.endLoop()
             else:
-                print("[TTS]", text)
+                if not interrupt_event.is_set():
+                    print("[TTS]", text)
         except Exception as e:
             print("TTS error:", e)
-            print("[TTS fallback print]", text)
+            if not interrupt_event.is_set():
+                print("[TTS fallback print]", text)
 
 tts_thread = threading.Thread(target=tts_worker, daemon=True)
 tts_thread.start()
@@ -806,9 +862,14 @@ def speak(text: str):
 
     Normalization: lowercased, trimmed, and inner whitespace collapsed.
     """
-    global last_spoken_text
+    global last_spoken_text, web_interface
     if not text:
         return
+    
+    # Don't speak if we're interrupted
+    if interrupt_event.is_set():
+        return
+        
     norm = _normalize_for_compare(text)
     with last_spoken_lock:
         if norm == last_spoken_text:
@@ -818,6 +879,67 @@ def speak(text: str):
         last_spoken_text = norm
     print(f"[SPEAK] {text}", flush=True)
     tts_queue.put(text)
+    
+    # Update web interface transcript
+    if web_interface:
+        try:
+            web_interface.emit_voice_transcript(text, 'assistant')
+        except Exception as e:
+            pass  # Don't crash on web interface errors
+
+def stop_speaking():
+    """Stop current speech and clear TTS queue"""
+    global tts_process
+    
+    print("[INTERRUPT] Stopping speech...")
+    interrupt_event.set()
+    
+    # Clear the TTS queue
+    while not tts_queue.empty():
+        try:
+            tts_queue.get_nowait()
+        except queue.Empty:
+            break
+    
+    # Kill current TTS process if running
+    with interrupt_lock:
+        if tts_process:
+            try:
+                tts_process.terminate()
+                tts_process.wait(timeout=1)
+            except:
+                try:
+                    tts_process.kill()
+                except:
+                    pass
+            tts_process = None
+    
+    # Brief pause then clear interrupt
+    time.sleep(0.5)
+    interrupt_event.clear()
+    print("[INTERRUPT] Speech stopped.")
+
+def interrupt_processing():
+    """Interrupt current processing and return to idle state"""
+    print("[INTERRUPT] Interrupting current processing...")
+    
+    # Stop speech
+    stop_speaking()
+    
+    # Clear block event to resume normal operations
+    block_event.clear()
+    
+    # Update status
+    with status_lock:
+        global status_text
+        status_text = "Interrupted"
+    
+    speak("Operation stopped.")
+    
+    # Return to idle after brief pause
+    time.sleep(1)
+    with status_lock:
+        status_text = "Idle"
 
 # Helper: convert frame (BGR) to data URI PNG
 def frame_to_data_uri(frame_bgr: np.ndarray) -> str:
@@ -851,7 +973,13 @@ def transcribe_audio_data(audio_data, recognizer: sr.Recognizer):
                 res = rec.Result()
                 j = json.loads(res)
                 text = j.get("text", "") or ""
-                return text.strip()
+                text = text.strip()
+                
+                # Check for stop commands
+                if check_for_stop_command(text):
+                    return "STOP_COMMAND_DETECTED"
+                    
+                return text
             except Exception as e:
                 # If manual Vosk fails for any reason, log and fall back to Google if available
                 print("Manual Vosk recognition failed, falling back to online STT:", e)
@@ -859,7 +987,13 @@ def transcribe_audio_data(audio_data, recognizer: sr.Recognizer):
         # Fall back to Google online recognizer
         try:
             text = recognizer.recognize_google(audio_data)
-            return (text or "").strip()
+            text = (text or "").strip()
+            
+            # Check for stop commands
+            if check_for_stop_command(text):
+                return "STOP_COMMAND_DETECTED"
+                
+            return text
         except sr.UnknownValueError:
             return ""
         except sr.RequestError as e:
@@ -872,6 +1006,20 @@ def transcribe_audio_data(audio_data, recognizer: sr.Recognizer):
     except Exception as e:
         print("transcribe_audio_data unexpected error:", e)
         return ""
+
+def check_for_stop_command(text):
+    """Check if the text contains stop commands"""
+    if not text:
+        return False
+        
+    stop_commands = [
+        'stop', 'halt', 'pause', 'quiet', 'silence', 'shut up',
+        'cancel', 'abort', 'interrupt', 'enough', 'nevermind',
+        'stop it', 'stop that', 'be quiet', 'shush'
+    ]
+    
+    text_lower = text.lower()
+    return any(cmd in text_lower for cmd in stop_commands)
 
 
 def transcribe_chunk(timeout=3, phrase_time_limit=2):
@@ -901,6 +1049,11 @@ def listen_for_seconds(sec=5, phrase_time_limit=None):
     recognizer = _make_recognizer()
     if shared_mic is None:
         return ""
+        
+    # Check if we're already interrupted
+    if interrupt_event.is_set():
+        return ""
+        
     with mic_lock:
         with shared_mic as source:
             try:
@@ -915,8 +1068,20 @@ def listen_for_seconds(sec=5, phrase_time_limit=None):
             except Exception as e:
                 print("listen_for_seconds error:", e)
                 return ""
+    
+    # Check again if we were interrupted during listening
+    if interrupt_event.is_set():
+        return ""
+        
     text = transcribe_audio_data(audio, recognizer)
-    return (text or "").strip()
+    text = (text or "").strip()
+    
+    # Handle stop commands
+    if text == "STOP_COMMAND_DETECTED":
+        interrupt_processing()
+        return ""
+        
+    return text
 
 # YOLO model loading (CPU by default)
 print(f"Loading YOLO model '{YOLO_MODEL}'. This may download weights on first run...")
@@ -1039,6 +1204,11 @@ def draw_overlay(frame, detections, fps, status):
     obj_count_text = f"Objects: {len(detections)}"
     cv2.putText(frame, obj_count_text, (62, 85), font, 0.6, (0, 0, 0), 3)  # Shadow
     cv2.putText(frame, obj_count_text, (60, 83), font, 0.6, (255, 255, 255), 2)  # Main text
+    
+    # Control hints in bottom right
+    control_hints = "Press: S=Stop, H=Help, Q=Quit"
+    (text_w, text_h), _ = cv2.getTextSize(control_hints, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+    cv2.putText(frame, control_hints, (w - text_w - 10, h - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
     
     # Enhanced bounding boxes with confidence bars and modern styling
     for cls, conf, (x1, y1, x2, y2) in detections:
@@ -1244,8 +1414,19 @@ def hotword_listener_thread():
             text = transcribe_audio_data(audio, recognizer).strip()
             if not text:
                 continue
+            
+            # Handle stop commands first
+            if text == "STOP_COMMAND_DETECTED":
+                interrupt_processing()
+                if web_interface:
+                    web_interface.emit_voice_transcript("Stop command detected", 'user')
+                continue
+                
             text_low = text.lower()
             if text_low.startswith("helper"):
+                # Update web interface with detected voice command
+                if web_interface:
+                    web_interface.emit_voice_transcript(text, 'user')
                 # Enter exclusive mode: block other operations
                 block_event.set()   # ### CHANGED: block everything else
                 try:
@@ -1371,7 +1552,38 @@ def post_summary_listen_worker():
 
 
 def main():
-    global latest_frame, status_text, dashboard
+    global latest_frame, status_text, dashboard, web_interface
+    
+    # Initialize web interface if enabled
+    web_interface = None
+    if ENABLE_WEB_INTERFACE:
+        try:
+            from web_interface import WebInterface
+            web_interface = WebInterface(
+                analytics_tracker=analytics_tracker,
+                latest_frame_lock=latest_frame_lock,
+                latest_frame=lambda: latest_frame,
+                status_lock=status_lock,
+                status_text=lambda: status_text,
+                process_advanced_command_func=process_advanced_command,
+                interrupt_processing_func=interrupt_processing
+            )
+            
+            # Start web interface in separate thread
+            web_thread = threading.Thread(
+                target=lambda: web_interface.run(host=WEB_HOST, port=WEB_PORT), 
+                daemon=True
+            )
+            web_thread.start()
+            print(f"Web interface started on http://{WEB_HOST}:{WEB_PORT}")
+        except ImportError as e:
+            print(f"Web interface dependencies not available: {e}")
+            web_interface = None
+        except Exception as e:
+            print(f"Failed to start web interface: {e}")
+            web_interface = None
+    else:
+        print("Web interface disabled (set ENABLE_WEB_INTERFACE=true to enable)")
     
     # Initialize dashboard if enabled
     dashboard = None
@@ -1468,6 +1680,14 @@ def main():
                 except Exception as e:
                     # Dashboard update errors shouldn't crash main loop
                     pass
+            
+            # Update web interface if available
+            if web_interface:
+                try:
+                    web_interface.emit_camera_stats(fps, status_label, detections)
+                except Exception as e:
+                    # Web interface update errors shouldn't crash main loop
+                    pass
 
             # Periodic summary every ~summary_interval (only if not in exclusive mode)
             now = time.time()
@@ -1489,6 +1709,15 @@ def main():
                 print("Quitting by user request.")
                 stop_event.set()
                 break
+            elif key == ord('s') or key == 27:  # 's' key or ESC key
+                print("Stop command pressed!")
+                interrupt_processing()
+            elif key == ord('h'):  # 'h' for help
+                print("Keyboard shortcuts:")
+                print("  'q' - Quit application")
+                print("  's' or ESC - Stop current speech/processing")
+                print("  'h' - Show this help")
+                speak("Press Q to quit, S or Escape to stop speech, or H for help.")
             # Small sleep to yield CPU (tune for performance)
             time.sleep(0.001)
     except KeyboardInterrupt:
