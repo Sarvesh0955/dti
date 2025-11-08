@@ -267,6 +267,59 @@
             color: #00aaff;
         }
 
+        /* Voice Command Buttons */
+        .command-btn {
+            background: linear-gradient(135deg, rgba(0, 255, 65, 0.2), rgba(0, 200, 50, 0.2));
+            border: 1px solid rgba(0, 255, 65, 0.4);
+            color: white;
+            padding: 12px 15px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.3s;
+            text-align: center;
+            font-weight: 500;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .command-btn:hover {
+            background: linear-gradient(135deg, rgba(0, 255, 65, 0.3), rgba(0, 200, 50, 0.3));
+            border-color: rgba(0, 255, 65, 0.6);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 255, 65, 0.3);
+        }
+
+        .command-btn:active {
+            transform: translateY(0);
+        }
+
+        .command-btn.executing {
+            background: linear-gradient(135deg, rgba(255, 170, 0, 0.3), rgba(255, 140, 0, 0.3));
+            border-color: rgba(255, 170, 0, 0.6);
+            pointer-events: none;
+        }
+
+        .command-btn.executing::after {
+            content: '⏳';
+            position: absolute;
+            right: 10px;
+            animation: spin 1s linear infinite;
+        }
+
+        .command-btn-title {
+            font-weight: bold;
+            display: block;
+            margin-bottom: 3px;
+            text-transform: capitalize;
+        }
+
+        .command-btn-desc {
+            font-size: 0.75em;
+            opacity: 0.8;
+            display: block;
+        }
+
     </style>
 </head>
 <body>
@@ -290,18 +343,18 @@
                 </div>
             </div>
 
-            <!-- Stats Grid -->
-            <div class="stats-grid">
 
-                <div class="stat-card">
-                    <div class="stat-value" id="session-time">00:00</div>
-                    <div class="stat-label">Session Time</div>
+            <!-- Voice Commands Section -->
+            <div class="terminal-container" style="margin-top: 20px;">
+                <div class="terminal-header">
+                    <div class="terminal-title">
+                        🎤 Voice Commands
+                        <span style="font-size: 0.7em; color: #888;">(Click to execute)</span>
+                    </div>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-value" id="avg-fps">0.0</div>
-                    <div class="stat-label">Average FPS</div>
+                <div style="padding: 15px; display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; max-height: 300px; overflow-y: auto;" class="scrollbar" id="voice-commands-grid">
+                    <div style="text-align: center; padding: 20px; color: #888;">Loading commands...</div>
                 </div>
-                
             </div>
 
             <!-- Terminal Output Section -->
@@ -457,6 +510,91 @@
             socket.emit('clear_terminal');
         }
 
+        // Voice Commands functionality
+        let voiceCommands = {};
+
+        async function loadVoiceCommands() {
+            try {
+                const response = await fetch('/api/voice_commands');
+                const data = await response.json();
+                voiceCommands = data.commands;
+                displayVoiceCommands();
+            } catch (error) {
+                console.error('Error loading voice commands:', error);
+                document.getElementById('voice-commands-grid').innerHTML = 
+                    '<div style="text-align: center; padding: 20px; color: #ff4444;">Failed to load commands</div>';
+            }
+        }
+
+        function displayVoiceCommands() {
+            const grid = document.getElementById('voice-commands-grid');
+            if (Object.keys(voiceCommands).length === 0) {
+                grid.innerHTML = '<div style="text-align: center; padding: 20px; color: #888;">No commands available</div>';
+                return;
+            }
+
+            grid.innerHTML = '';
+            for (const [command, description] of Object.entries(voiceCommands)) {
+                const btn = document.createElement('button');
+                btn.className = 'command-btn';
+                btn.innerHTML = `
+                    <span class="command-btn-title">${command}</span>
+                    <span class="command-btn-desc">${description}</span>
+                `;
+                btn.onclick = () => executeVoiceCommand(command, description);
+                grid.appendChild(btn);
+            }
+        }
+
+        async function executeVoiceCommand(command, description) {
+            console.log('Executing command:', command);
+            
+            // Find the button that was clicked
+            const buttons = document.querySelectorAll('.command-btn');
+            let clickedButton = null;
+            buttons.forEach(btn => {
+                if (btn.querySelector('.command-btn-title').textContent === command) {
+                    clickedButton = btn;
+                }
+            });
+
+            if (clickedButton) {
+                clickedButton.classList.add('executing');
+            }
+
+            // Add to terminal
+            addTerminalLine(`> Executing command: ${command}`, true);
+            addTerminalLine(`  Description: ${description}`, true);
+
+            try {
+                const response = await fetch('/api/execute_command', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ command: command })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    addTerminalLine(`✅ Command executed successfully!`, true);
+                    addTerminalLine(`📤 Result: ${data.result}`, true);
+                    console.log('Command result:', data.result);
+                } else {
+                    addTerminalLine(`❌ Command failed: ${data.error}`, true);
+                    console.error('Command error:', data.error);
+                }
+            } catch (error) {
+                addTerminalLine(`❌ Network error: ${error.message}`, true);
+                console.error('Error executing command:', error);
+            } finally {
+                if (clickedButton) {
+                    clickedButton.classList.remove('executing');
+                }
+            }
+        }
+
         // Page initialization
         document.addEventListener('DOMContentLoaded', function() {
             console.log('Dashboard loaded - terminal output ready');
@@ -466,6 +604,9 @@
             } else {
                 console.error('Terminal output element NOT found!');
             }
+
+            // Load voice commands
+            loadVoiceCommands();
         });
 
         // Update camera feed stats

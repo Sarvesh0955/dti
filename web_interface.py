@@ -148,6 +148,69 @@ class WebInterface:
                 'avg_fps': stats['avg_fps'],
                 'total_objects': stats['total_recent']
             })
+        
+        @self.app.route('/api/voice_commands')
+        def get_voice_commands():
+            """API endpoint to get available voice commands"""
+            import sys
+            main_module = sys.modules.get('__main__')
+            if main_module and hasattr(main_module, 'VOICE_COMMANDS'):
+                return jsonify({
+                    'commands': main_module.VOICE_COMMANDS
+                })
+            return jsonify({'commands': {}})
+        
+        @self.app.route('/api/execute_command', methods=['POST'])
+        def execute_command():
+            """API endpoint to execute a voice command"""
+            try:
+                data = request.get_json()
+                command_text = data.get('command', '')
+                
+                if not command_text:
+                    return jsonify({'success': False, 'error': 'No command provided'}), 400
+                
+                # Get the main module to access process_advanced_command
+                import sys
+                main_module = sys.modules.get('__main__')
+                
+                if not main_module:
+                    return jsonify({'success': False, 'error': 'Main module not found'}), 500
+                
+                # Get current frame
+                frame = None
+                if hasattr(main_module, 'latest_frame') and hasattr(main_module, 'latest_frame_lock'):
+                    with main_module.latest_frame_lock:
+                        if main_module.latest_frame is not None:
+                            frame = main_module.latest_frame.copy()
+                
+                if frame is None:
+                    return jsonify({'success': False, 'error': 'No camera frame available'}), 503
+                
+                # Process the command
+                if hasattr(main_module, 'process_advanced_command'):
+                    print(f"🎤 Web command received: {command_text}")
+                    result = main_module.process_advanced_command(command_text, frame)
+                    
+                    # Trigger TTS
+                    if hasattr(main_module, 'speak_text'):
+                        main_module.speak_text(result)
+                    
+                    self.total_commands += 1
+                    
+                    return jsonify({
+                        'success': True,
+                        'command': command_text,
+                        'result': result
+                    })
+                else:
+                    return jsonify({'success': False, 'error': 'Command processor not available'}), 500
+                    
+            except Exception as e:
+                import traceback
+                error_msg = f"Error executing command: {str(e)}\n{traceback.format_exc()}"
+                print(f"❌ {error_msg}")
+                return jsonify({'success': False, 'error': str(e)}), 500
     
     def setup_socketio(self):
         """Setup SocketIO event handlers"""
