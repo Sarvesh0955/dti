@@ -879,13 +879,6 @@ def speak(text: str):
         last_spoken_text = norm
     print(f"[SPEAK] {text}", flush=True)
     tts_queue.put(text)
-    
-    # Update web interface transcript
-    if web_interface:
-        try:
-            web_interface.emit_voice_transcript(text, 'assistant')
-        except Exception as e:
-            pass  # Don't crash on web interface errors
 
 def stop_speaking():
     """Stop current speech and clear TTS queue"""
@@ -1418,15 +1411,10 @@ def hotword_listener_thread():
             # Handle stop commands first
             if text == "STOP_COMMAND_DETECTED":
                 interrupt_processing()
-                if web_interface:
-                    web_interface.emit_voice_transcript("Stop command detected", 'user')
                 continue
                 
             text_low = text.lower()
             if text_low.startswith("helper"):
-                # Update web interface with detected voice command
-                if web_interface:
-                    web_interface.emit_voice_transcript(text, 'user')
                 # Enter exclusive mode: block other operations
                 block_event.set()   # ### CHANGED: block everything else
                 try:
@@ -1564,9 +1552,7 @@ def main():
                 latest_frame_lock=latest_frame_lock,
                 latest_frame=lambda: latest_frame,
                 status_lock=status_lock,
-                status_text=lambda: status_text,
-                process_advanced_command_func=process_advanced_command,
-                interrupt_processing_func=interrupt_processing
+                status_text=lambda: status_text
             )
             
             # Start web interface in separate thread

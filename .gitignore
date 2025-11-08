@@ -116,6 +116,7 @@ screenshots/
 *.db
 *.pem
 *.key
+*.zip
 node_modules/
 
 # OS specific

@@ -20,9 +20,8 @@
         }
 
         .container {
-            display: grid;
-            grid-template-columns: 2fr 1fr;
-            gap: 20px;
+            display: flex;
+            justify-content: center;
             padding: 20px;
             min-height: 100vh;
         }
@@ -33,18 +32,11 @@
             border-radius: 20px;
             padding: 20px;
             border: 1px solid rgba(255, 255, 255, 0.2);
+            max-width: 1400px;
+            width: 100%;
         }
 
-        .side-panel {
-            background: rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-        }
+
 
         .panel-header {
             display: flex;
@@ -100,161 +92,23 @@
             100% { opacity: 1; }
         }
 
-        .transcript-section {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 15px;
-            padding: 15px;
-            height: 200px;
-            overflow-y: auto;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
 
-        .transcript-item {
-            margin-bottom: 10px;
-            padding: 8px 12px;
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.1);
-            border-left: 4px solid #00ff41;
-        }
 
-        .transcript-time {
-            font-size: 0.8em;
-            color: #ccc;
-            margin-bottom: 3px;
-        }
 
-        .question-section {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 15px;
-            padding: 15px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
 
-        .question-input {
-            width: 100%;
-            padding: 12px;
-            border: none;
-            border-radius: 10px;
-            background: rgba(255, 255, 255, 0.1);
-            color: white;
-            font-size: 1em;
-            margin-bottom: 10px;
-            backdrop-filter: blur(5px);
-        }
 
-        .question-input::placeholder {
-            color: #ccc;
-        }
-
-        .question-input:focus {
-            outline: none;
-            background: rgba(255, 255, 255, 0.2);
-        }
-
-        .btn {
-            padding: 12px 20px;
-            border: none;
-            border-radius: 10px;
-            background: linear-gradient(45deg, #00ff41, #00cc33);
-            color: white;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            font-size: 1em;
-        }
-
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0, 255, 65, 0.4);
-        }
-
-        .btn:active {
-            transform: translateY(0);
-        }
-
-        .btn-secondary {
-            background: linear-gradient(45deg, #667eea, #764ba2);
-        }
-
-        .btn-secondary:hover {
-            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
-        }
-
-        .btn-danger {
-            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
-        }
-
-        .btn-danger:hover {
-            box-shadow: 0 5px 15px rgba(255, 107, 107, 0.4);
-        }
-
-        .commands-section {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 15px;
-            padding: 15px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            flex-grow: 1;
-        }
-
-        .command-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 10px;
-            margin-top: 15px;
-        }
-
-        .command-btn {
-            padding: 10px 15px;
-            border: none;
-            border-radius: 8px;
-            background: rgba(255, 255, 255, 0.1);
-            color: white;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            text-align: left;
-            font-size: 0.9em;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-
-        .command-btn:hover {
-            background: rgba(255, 255, 255, 0.2);
-            transform: translateX(5px);
-        }
-
-        .response-section {
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 15px;
-            padding: 15px;
-            height: 150px;
-            overflow-y: auto;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .response-item {
-            margin-bottom: 15px;
-            padding: 10px;
-            border-radius: 8px;
-            background: rgba(0, 255, 65, 0.1);
-            border-left: 4px solid #00ff41;
-        }
-
-        .response-time {
-            font-size: 0.8em;
-            color: #ccc;
-            margin-bottom: 5px;
-        }
-
-        .control-buttons {
-            display: flex;
-            gap: 10px;
-            margin-top: 15px;
-        }
 
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: repeat(4, 1fr);
             gap: 15px;
-            margin-bottom: 20px;
+            margin-top: 20px;
+        }
+        
+        @media (max-width: 768px) {
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
         }
 
         .stat-card {
@@ -313,12 +167,7 @@
             display: none;
         }
 
-        @media (max-width: 1024px) {
-            .container {
-                grid-template-columns: 1fr;
-                grid-template-rows: auto auto;
-            }
-        }
+
     </style>
 </head>
 <body>
@@ -344,10 +193,7 @@
 
             <!-- Stats Grid -->
             <div class="stats-grid">
-                <div class="stat-card">
-                    <div class="stat-value" id="total-commands">0</div>
-                    <div class="stat-label">Total Commands</div>
-                </div>
+
                 <div class="stat-card">
                     <div class="stat-value" id="session-time">00:00</div>
                     <div class="stat-label">Session Time</div>
@@ -356,65 +202,8 @@
                     <div class="stat-value" id="avg-fps">0.0</div>
                     <div class="stat-label">Average FPS</div>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-value" id="objects-detected">0</div>
-                    <div class="stat-label">Objects Today</div>
-                </div>
+                
             </div>
-        </div>
-
-        <!-- Side Panel - Controls -->
-        <div class="side-panel">
-            <!-- Voice Transcript -->
-            <section>
-                <div class="panel-header">🎤 Voice Transcript</div>
-                <div class="transcript-section scrollbar" id="transcript-container">
-                    <div class="transcript-item">
-                        <div class="transcript-time">System Ready</div>
-                        <div>AI Vision Assistant is listening for voice commands...</div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Ask AI Questions -->
-            <section>
-                <div class="panel-header">💬 Ask AI</div>
-                <div class="question-section">
-                    <input type="text" class="question-input" id="question-input" 
-                           placeholder="Type your question about what the camera sees..." />
-                    <button class="btn" id="ask-btn" onclick="askQuestion()">
-                        <span id="ask-btn-text">Ask Question</span>
-                        <div class="loading hidden" id="ask-loading"></div>
-                    </button>
-                </div>
-                
-                <div class="response-section scrollbar" id="response-container">
-                    <div class="response-item">
-                        <div class="response-time">Ready</div>
-                        <div>Type a question above to get AI analysis of the current camera view.</div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- Voice Commands -->
-            <section class="commands-section">
-                <div class="panel-header">🗣️ Voice Commands</div>
-                <div class="control-buttons">
-                    <button class="btn btn-secondary" onclick="showAllCommands()">Show All Commands</button>
-                    <button class="btn btn-danger" onclick="stopSpeech()">Stop Speech</button>
-                </div>
-                
-                <div class="command-grid" id="commands-grid">
-                    <button class="command-btn" onclick="executeCommand('describe')">📝 Describe Scene</button>
-                    <button class="command-btn" onclick="executeCommand('count people')">👥 Count People</button>
-                    <button class="command-btn" onclick="executeCommand('read')">📖 Read Text</button>
-                    <button class="command-btn" onclick="executeCommand('navigate')">🧭 Navigation Help</button>
-                    <button class="command-btn" onclick="executeCommand('safety')">🛡️ Safety Check</button>
-                    <button class="command-btn" onclick="executeCommand('colors')">🎨 Describe Colors</button>
-                    <button class="command-btn" onclick="executeCommand('time')">⏰ Current Time</button>
-                    <button class="command-btn" onclick="executeCommand('status')">📊 System Status</button>
-                </div>
-            </section>
         </div>
     </div>
 
@@ -437,6 +226,14 @@
             updateStatus('Disconnected');
         });
 
+        socket.on('connect_error', function(error) {
+            console.error('Connection error:', error);
+            document.getElementById('connection-indicator').classList.remove('hidden');
+            updateStatus('Connection Error');
+        });
+
+
+
         // Update camera feed stats
         socket.on('camera_stats', function(data) {
             document.getElementById('fps-display').textContent = `FPS: ${data.fps.toFixed(1)}`;
@@ -446,21 +243,7 @@
             updateStatus(data.status);
         });
 
-        // Voice transcript updates
-        socket.on('voice_transcript', function(data) {
-            addTranscriptItem(data.text, data.type || 'user');
-        });
 
-        // AI responses
-        socket.on('ai_response', function(data) {
-            addResponseItem(data.text);
-            addTranscriptItem(data.text, 'assistant');
-        });
-
-        // Command responses
-        socket.on('command_response', function(data) {
-            addResponseItem(data.response);
-        });
 
         function updateStatus(status) {
             document.getElementById('status-text').textContent = status;
@@ -475,128 +258,7 @@
             }
         }
 
-        function addTranscriptItem(text, type = 'user') {
-            const container = document.getElementById('transcript-container');
-            const item = document.createElement('div');
-            item.className = 'transcript-item';
-            
-            const time = new Date().toLocaleTimeString();
-            const icon = type === 'assistant' ? '🤖' : '👤';
-            
-            item.innerHTML = `
-                <div class="transcript-time">${time} ${icon}</div>
-                <div>${text}</div>
-            `;
-            
-            container.appendChild(item);
-            container.scrollTop = container.scrollHeight;
-            
-            // Keep only last 20 items
-            while (container.children.length > 20) {
-                container.removeChild(container.firstChild);
-            }
-        }
 
-        function addResponseItem(text) {
-            const container = document.getElementById('response-container');
-            const item = document.createElement('div');
-            item.className = 'response-item';
-            
-            const time = new Date().toLocaleTimeString();
-            
-            item.innerHTML = `
-                <div class="response-time">${time}</div>
-                <div>${text}</div>
-            `;
-            
-            container.appendChild(item);
-            container.scrollTop = container.scrollHeight;
-            
-            // Keep only last 10 responses
-            while (container.children.length > 10) {
-                container.removeChild(container.firstChild);
-            }
-        }
-
-        function askQuestion() {
-            const input = document.getElementById('question-input');
-            const question = input.value.trim();
-            
-            if (!question) return;
-            
-            const btn = document.getElementById('ask-btn');
-            const btnText = document.getElementById('ask-btn-text');
-            const loading = document.getElementById('ask-loading');
-            
-            // Show loading state
-            btnText.classList.add('hidden');
-            loading.classList.remove('hidden');
-            btn.disabled = true;
-            
-            // Add question to transcript
-            addTranscriptItem(question, 'user');
-            commandCount++;
-            document.getElementById('total-commands').textContent = commandCount;
-            
-            // Send question to server
-            socket.emit('ask_question', { question: question });
-            
-            // Clear input
-            input.value = '';
-            
-            // Reset button after 3 seconds
-            setTimeout(() => {
-                btnText.classList.remove('hidden');
-                loading.classList.add('hidden');
-                btn.disabled = false;
-            }, 3000);
-        }
-
-        function executeCommand(command) {
-            addTranscriptItem(`Helper ${command}`, 'user');
-            commandCount++;
-            document.getElementById('total-commands').textContent = commandCount;
-            socket.emit('voice_command', { command: command });
-        }
-
-        function stopSpeech() {
-            socket.emit('stop_speech');
-            addTranscriptItem('Stop command sent', 'system');
-        }
-
-        function showAllCommands() {
-            const commands = [
-                '📝 describe - General scene description',
-                '👥 count [object] - Count specific objects',
-                '📖 read - Read visible text/signs',
-                '🧭 navigate - Navigation assistance',
-                '🔍 find [object] - Locate specific objects',
-                '🛡️ safety - Check for safety concerns',
-                '♿ accessibility - Accessibility information',
-                '🎨 colors - Describe scene colors',
-                '📏 size - Compare object sizes',
-                '🔄 compare - Compare elements',
-                '🔍 analyze - Detailed scene analysis',
-                '🌤️ weather - Weather conditions',
-                '⏰ time - Current time',
-                '📊 status - System statistics',
-                '❓ help - Show help information',
-                '🛑 stop - Stop current operation'
-            ];
-            
-            let commandText = 'Available Voice Commands:\n\n';
-            commandText += 'Say "Helper" followed by:\n\n';
-            commandText += commands.join('\n');
-            
-            addResponseItem(commandText);
-        }
-
-        // Allow Enter key to ask question
-        document.getElementById('question-input').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                askQuestion();
-            }
-        });
 
         // Update session time every second
         setInterval(() => {
@@ -607,12 +269,8 @@
                 `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
         }, 1000);
 
-        // Refresh camera feed every 100ms
-        setInterval(() => {
-            const img = document.getElementById('camera-feed');
-            const timestamp = new Date().getTime();
-            img.src = `/video_feed?t=${timestamp}`;
-        }, 100);
+        // Camera feed is a continuous stream - no need to refresh manually
+        // The /video_feed endpoint uses multipart/x-mixed-replace to stream frames
     </script>
 </body>
 </html>
